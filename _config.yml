@@ -1,0 +1,37 @@
+# Site settings
+name: Lolizepelin
+email: lolizepelin@gmail.com
+author: gcy
+url: http://www.lolizeppelin.com
+resume_site: 个人笔记博客
+github: https://github.com/lolizeppelin/
+baseurl: ""
+description: Actually, less is more!
+meta_description: GCY
+motto: gcy.
+banner: gcy。
+
+#permalink: /:categories/:year/:month/:day/:title/
+permalink: /:year/:month/:day/:title/
+paginate: 10
+
+exclude: ['README.md', 'Gemfile.lock', 'Gemfile', 'Rakefile']
+
+github_username: lolizeppelin
+highlighter: rouge
+
+# Build settings
+markdown: kramdown
+
+FB:
+  comments :
+    provider : lolizepelin
+    duoshuo:
+        short_name : lolizepelin
+    disqus :
+        short_name : lolizepelin
+    # facebook :
+    #   appid : 123
+    #   num_posts: 5
+    #   width: 580
+    #   colorscheme: light
