@@ -3,12 +3,12 @@ name: Lolizepelin
 email: lolizepelin@gmail.com
 author: gcy
 url: http://www.lolizeppelin.com
-resume_site: books
+resume_site: about
 github: https://github.com/lolizeppelin/
 baseurl: ""
 description: Actually, less is more!
 meta_description: GCY
-motto: gcy
+motto: Lolizeppelin's Blog
 banner: gcy
 
 # permalink: /:categories/:year/:month/:day/:title/
