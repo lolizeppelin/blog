@@ -15,9 +15,11 @@ tag: openstack
 ## [对应项目页](http://releases.openstack.org/mitaka/index.html)
 
 centos7安装添加yum源
+
 ```shell
 yum install centos-release-openstack-mitaka
 ```
+
 然后安装yum对应rpm包即可
 
     以python打头的是实际代码
@@ -29,6 +31,7 @@ yum install centos-release-openstack-mitaka
 通过看Service Projects,来认识openstack,我们先从茫茫多的service中,找出主要的service，并理解这些service的作用及关系
 
 #### 打开devstack,一个自动安装openstack的脚本,找到里面的install部分
+
 ```shell
 # Install Oslo libraries
 install_oslo
@@ -234,6 +237,7 @@ fi
     http://mirror.centos.org/centos/7/cloud/x86_64/openstack-mitaka/
 
 ##### 如果需要改成非systemd,工作量还是比较大,找到一个参考包
+
     openstack-nova-2014.2.2-2.el6.src.rpm
 
 需要对修改有服务的程序spec文件并写init脚本...所以.....还是升级centos7再测试吧
