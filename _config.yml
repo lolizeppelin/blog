@@ -11,8 +11,8 @@ meta_description: GCY
 motto: gcy
 banner: gcy
 
-#permalink: /:categories/:year/:month/:day/:title/
-permalink: /:year/:month/:day/:title/
+permalink: /:categories/:year/:month/:day/:title/
+# permalink: /:year/:month/:day/:title/
 paginate: 10
 
 exclude: ['README.md', 'Gemfile.lock', 'Gemfile', 'Rakefile']

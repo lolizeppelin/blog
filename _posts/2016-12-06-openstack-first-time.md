@@ -209,7 +209,7 @@ fi
     neutron是虚拟化很重要的一环、网络虚拟化都是由他负责,各种硬件商都参与这个组件开发
 
 
-#### (nova)比较复杂
+#### 1(nova)比较复杂
     我们先看nova的rpm打包文件
     https://github.com/openstack-packages
     去到去对应版本的spec文件
