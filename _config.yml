@@ -3,7 +3,7 @@ name: Lolizepelin
 email: lolizepelin@gmail.com
 author: gcy
 url: http://www.lolizeppelin.com
-resume_site: 个人笔记博客
+# resume_site: 个人笔记博客
 github: https://github.com/lolizeppelin/
 baseurl: ""
 description: Actually, less is more!
