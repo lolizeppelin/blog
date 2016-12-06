@@ -8,8 +8,8 @@ github: https://github.com/lolizeppelin/
 baseurl: ""
 description: Actually, less is more!
 meta_description: GCY
-motto: gcy.
-banner: gcy。
+motto: gcy
+banner: gcy
 
 #permalink: /:categories/:year/:month/:day/:title/
 permalink: /:year/:month/:day/:title/
@@ -30,8 +30,5 @@ FB:
         short_name : lolizepelin
     disqus :
         short_name : lolizepelin
-    # facebook :
-    #   appid : 123
-    #   num_posts: 5
-    #   width: 580
-    #   colorscheme: light
+
+gems: [jekyll-paginate]
