@@ -1,9 +1,9 @@
 ---
 layout: post
-title:  "OpenStack Mitaka从零开始"
+title:  "OpenStack Mitaka从零开始 初识openstack"
 date:   2016-12-06 15:05:00 +0800
 categories: "虚拟化"
-tag: openstack
+tag: ["openstack", "python"]
 ---
 
 * content
