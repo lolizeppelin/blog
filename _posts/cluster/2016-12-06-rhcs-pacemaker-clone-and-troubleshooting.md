@@ -19,6 +19,7 @@ tag: ["rhcs", "drbd", "pacemaker"]
 
 
 ## 克隆资源特有参数
+
 ##### globally-unique 克隆状态通过这个参数来控制
 
 1. 匿名克隆：参数globally-unique=false。这是最简单的克隆类型。这种克隆类型在所有位置上的运行方式都相同。因此,每台计算机上只能有一个匿名克隆实例是活动的。
@@ -29,6 +30,7 @@ tag: ["rhcs", "drbd", "pacemaker"]
 
 ##### clone-node-max：每个节点上最多能运行多少份克隆资源，默认是1；
 ---
+
 ### 上面几个参数我们目前还用不到不用管,下面是常用参数
 ##### notify：当成功启动或关闭一份克隆资源，要不要通知给其它的克隆资源，可用值为false,true(默认状态英文文档上的没注意,反正主从克隆状态需要显式指定为true)
 ##### ordered：Should the copies be started in series (instead of in parallel).  为true时,克隆资源是串行启动，而非一起(parallel)启动,可用值为false,true；默认值是false
@@ -81,7 +83,9 @@ tag: ["rhcs", "drbd", "pacemaker"]
 ---
 
 ## resource参数
+
 ##### timeout   start stop monitor都有的参数,这个不解释了
+
 ##### monitor   特有参数
 
 1. interval  执行monitor的间隔
@@ -226,4 +230,5 @@ man 一下gfs2_tool, 可以知道gfs2_tool可以修改gfs2的table和proto
 这时候再启动集群,dlm锁就正常了,gfs2也能正常mount了
 
 # 总结
+
 ## 启用dlm锁的双节点集群,节点绝对不要启动启动,一定要确保节点通信正常后再启动,否则麻烦死你
