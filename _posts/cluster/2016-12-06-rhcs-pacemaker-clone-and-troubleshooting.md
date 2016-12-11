@@ -34,6 +34,7 @@ tag: ["rhcs", "drbd", "pacemaker"]
 ### 上面几个参数我们目前还用不到不用管,下面是常用参数
 
 ##### notify：当成功启动或关闭一份克隆资源，要不要通知给其它的克隆资源，可用值为false,true(默认状态英文文档上的没注意,反正主从克隆状态需要显式指定为true)
+
 ##### ordered：Should the copies be started in series (instead of in parallel).  为true时,克隆资源是串行启动，而非一起(parallel)启动,可用值为false,true；默认值是false
 
     这个ordered和constraint的order不是一个东西,这个是当前resource控制自身clone之间是否有序启动的
