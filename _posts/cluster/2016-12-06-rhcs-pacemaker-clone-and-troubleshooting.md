@@ -121,7 +121,9 @@ standby：将所有资源从资源失败的节点上移走。
 这个错误是/usr/lib/ocf/resource.d/linbit/drbd抛出的,查看这个脚本我们可以大致知道和参数OCF_RESKEY_CRM_meta_notify、OCF_RESKEY_CRM_meta_notify_start_uname有关
 
     通过上述方式,类似错误都可以通过这样的方式定位(用debug-start执行有时候定位不到)
-需要通过syslog来debug,[参考这里](http://blog.chinaunix.net/uid-23504396-id-3786530.html)
+需要通过syslog来debug
+
+通过syslog debug[参考这里](http://blog.chinaunix.net/uid-23504396-id-3786530.html)
 
 #### pcs status里显示集群节点online但是/var/log/cluster/corosync.log不停报错
 
