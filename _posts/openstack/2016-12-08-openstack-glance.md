@@ -10,7 +10,6 @@ tag: ["openstack", "python"]
 {:toc}
 
 
-
 ## nova-api需要配置glance服务,所以我们先配置glance
 
 #### glance是干什么的
@@ -21,7 +20,7 @@ tag: ["openstack", "python"]
 #### glance带了4个服务
     # 主要服务,对外api, 分为v1 v2
     /usr/lib/systemd/system/openstack-glance-api.service
-    # 主要服务,对内api 分v1 v2
+    # 主要服务,对内api 分v1 v2 (外部请求访问api,api将请求转化访问registry,所有api和registry都要启动)
     /usr/lib/systemd/system/openstack-glance-registry.service
     # 次要服务,K版中说明是新分出一个项目Glare，专门提供特殊的源服务。
     # 目前尚在开发中，希望通过该项目可以完善各种App Store的安装问题。
@@ -40,10 +39,13 @@ enable_v2_api = true
 enable_v1_registry = false
 enable_v2_registry = false
 location_strategy = location_order
-#registry_host = 0.0.0.0
-#registry_port = 9191
-registry_client_protocol = http
+# registry位置
+registry_host = 127.0.0.1
+registry_port = 9191
+# 是否把认证token发送给registry,不发送的话registry还要去keysone再认证一次
+# 顺便,这里可以设置认证的相关信息,也可以通过registry的配置文件获取
 send_identity_headers = true
+# rpc对应信息
 rpc_backend = rabbit
 control_exchange = glance
 rpc_response_timeout = 60

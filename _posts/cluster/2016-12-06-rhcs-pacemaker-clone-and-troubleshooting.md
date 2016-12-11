@@ -20,6 +20,7 @@ tag: ["rhcs", "drbd", "pacemaker"]
 
 ## 克隆资源特有参数
 ##### globally-unique 克隆状态通过这个参数来控制
+
 1. 匿名克隆：参数globally-unique=false。这是最简单的克隆类型。这种克隆类型在所有位置上的运行方式都相同。因此,每台计算机上只能有一个匿名克隆实例是活动的。
 2. 全局唯一克隆：参数globally-unique=true。这些资源各不相同。一个节点上运行的克隆实例与另一个节点上运行的实例不同,同一个节点上运行的任何两个实例也不同。
 3. 状态克隆：作为参数出现在ms/master中。这些资源的活动实例分为两种状态:主动和被动，也称主和从。状态克隆可以是匿名克隆也可以是全局唯一克隆。
@@ -31,15 +32,58 @@ tag: ["rhcs", "drbd", "pacemaker"]
 ### 上面几个参数我们目前还用不到不用管,下面是常用参数
 ##### notify：当成功启动或关闭一份克隆资源，要不要通知给其它的克隆资源，可用值为false,true(默认状态英文文档上的没注意,反正主从克隆状态需要显式指定为true)
 ##### ordered：Should the copies be started in series (instead of in parallel).  为true时,克隆资源是串行启动，而非一起(parallel)启动,可用值为false,true；默认值是false
-这个ordered和constraint 的order不是一个东西,这个是控制自身clone之间的启动的,和其他resource没有关系,constraint里的order是控制不同resource顺序的
-##### interleave：这个设置为false的时候,constraint的order顺序的受到其他节点的影响,为true不受其他节点影响,比如说必须所有集群节点的dlm锁启动后,drbd设置Primary状态才能进行,而php-fpm服务只要自己节点的mount完就可以启动而不用等待其他节点mount完。[一个参考](https://www.hastexo.com/resources/hints-and-kinks/interleaving-pacemaker-clones)
-    注1:interleave=false设置在条件资源上,而不是被约束的资源上,比如dlm约束drbd在dlm上设置interleave=false
-    注2:drbd本身不能设置ordered=true,因为drbd的节点会等待另外一个节点启动起来通信后以后才算启动完毕，双master节点中drbd我设置interleave=false会出现只有一个节点Primary
+
+    这个ordered和constraint的order不是一个东西,这个是当前resource控制自身clone之间是否有序启动的
+    和其他resource没有关系,constraint里的order是控制不同resource顺序的
+
+##### interleave：下面是原文,这个参数比较重要,一定要仔细理解,没有这个参数的时候默认是false
+
+    Changes the behavior of ordering constraints (between clones/masters)
+    so that instances can start/stop as soon as their peer instance has (rather
+    than waiting for every instance of the other clone has). Allowed values: false, true
+
+    修改顺序约束在clone/masters中的表现
+    使得实例可以start/stop自己的实例而不用等待所有其他clone
+
+
+##### 默认false,这个设置为false的时候,constraint的order顺序的受到其他节点的影响,为true不受其他节点影响.比如说php-fpm需要自己节点的mount完就能启动,如果为默认的false,那么需要其他集群节点都mount完后,当前结点php-fpm才会启动,这个参数是设置在被约束的资源上的,比如
+
+    dlm上的设置interleave是没有用,因为dlm没有被约束,要让drbd在dlm都启动以后才启动
+    所以,我们需要将interleave=false设置在ms-drbd上（但是会造成其他问题,下面有描述）
+
+
+##### 之前打算实现一个约束, 让所有drbd节点设置Primary状态后mount才能进行,于是mount设置interleave=false, 添加约束promote ms-drbd then start fs_gfs2-clone,结果
+
+    单独stop一个节点然后start它这个节点必然出现mount不会等待drbd设置Primary就开始mount
+    而且drbd会在mount失败后才去设置Primary
+
+##### 于是我根据英文说明猜测,interleave只关心约束对象的start/stop状态
+
+    因为当interleave为false的时候
+    被约束对象(mount)只关心约束对象(drbd)是否在所有节点都start
+    所以当前结点的promote约束(promote约束内部肯会隐式的添加start约束)被忽略了
+    也就是说mount资源interleave=false的全局约束覆盖了当前结点的约束
+
+##### 后来又发现ms-drbd设置interleave=false会出现
+
+    单独stop一个节点然后start这个节点,drbd必然脑裂都进入standby状态
+    即使drbd的盘没有写入过任何数据,也会出现这个问题
+
+#### 最后在多次测试后终于发现
+
+    当interleave为true时, 停止一个节点,再开启的时候,集群会将所有节点资源关闭,再按照约束启动所有资源
+    当interleave为false时, 停止一个节点,再开启的时候,只有这个节点的资源被启动,出现了各种约束失效
+
+
+## 所以,interleave为flase的时候,drbd/gfs2双写系统不要尝试单独关闭节点,以免出现异常
+
+
 ---
 
 ## resource参数
 ##### timeout   start stop monitor都有的参数,这个不解释了
 ##### monitor   特有参数
+
 1. interval  执行monitor的间隔
 2. on-fail： monitor检查失败时执行的操作。允许的值：
 
@@ -160,7 +204,7 @@ man 一下gfs2_tool, 可以知道gfs2_tool可以修改gfs2的table和proto
 重启所有节点集群是重置dlm的最好方法,但是这里有个坑
 
 1. 节点无法关闭只能kill
-2. 节点因为dlm锁异常umount会被阻塞
+2. 节点因为dlm锁异常umount会被阻塞(最近测试发现应该不是dlm造成的,是drbd造成的)
 3. 因为无法umount导致reboot命令没效果
 4. 没注意到reboot无效,重启后节点dlm信息还是混乱的(这是个大坑,解决问题的时间都在这里了)
 
