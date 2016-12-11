@@ -222,6 +222,7 @@ man 一下gfs2_tool, 可以知道gfs2_tool可以修改gfs2的table和proto
 
 所以重启节点有可能需要强制重启
 强制重启使用以下命令,[参考来源](http://su-junjie.blog.163.com/blog/static/35123974201331324419480/)
+
     # 向sysrq文件中写入1, 开启SysRq功能
     echo 1 > /proc/sys/kernel/sysrq
     # 通过SysRq强制重启
@@ -239,4 +240,4 @@ man 一下gfs2_tool, 可以知道gfs2_tool可以修改gfs2的table和proto
 
 # 总结
 
-## 启用dlm锁的双节点集群,节点绝对不要启动启动,一定要确保节点通信正常后再启动,否则麻烦死你
+## 启用dlm锁的双节点集群,节点绝对不要自动启动,一定要确保节点通信正常后再启动,否则麻烦死你
