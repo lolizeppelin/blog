@@ -236,6 +236,11 @@ tag: ["openstack", "python"]
 |From keystone  [policy]| | | | |
 |policy|driver|sql| | |
 |policy|list_limit| | | |
+
+
+---
+    的打法
+---
 |From keystone  [resource]   resource就是操作project的(list  add delete update 之类), 从配置文件的取代可以看出和assignment(也就是role)的关系, project通过role来检查权限.代码里通过装饰器@controller.filterprotected 和@controller.protected来验证policy. 参考http://www.tuicool.com/articles/i2qUNf protected/filterprotected 最终会调用 /keystone/openstack/common/policy.py 中的 enforce 方法 keystone 与 openstack 其它component 中的 RBAC 实现的不同之处在于 keystone 中有时候需要做 token 验证再做 policy 检查。 Volume/Backup/ConsistencyGroup 等 API 类中的接口函数上的 @wrap_check_policy 或者在函数体内显式调用 check_policy(context, 'get', volume) 来判断调用用户的 role 是否满足 policy.json 中定义的要求。比如 /volume/api.py 中的 delete 方法：| | | | |
 |resource|driver| | |如果这里不配置,则继承[assignment]/driver|
 |resource|caching| | |取代[assignment]/caching|
