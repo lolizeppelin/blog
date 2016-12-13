@@ -33,15 +33,6 @@ tag: ["openstack", "python"]
 |DEFAULT|strict_password_check|False|true false|设置为false的时候,自动截断超过长度的password|
 |DEFAULT|secure_proxy_ssl_header|HTTP_X_FORWARDED_PROTO| |ssl有关  估计对应的http服务里要带入的http head|
 |DEFAULT|insecure_debug|False|true  false|和调试有关|
-
-
-
----
-    wtf
----
-
-
-
 |From keystone.notifications     对外通知配置,比如配置notification_opt_out=identity.user.created.那么当创建用户的时候,就会发送一个对外通知.这个是走ampq的, publisher_id就是注册的publisher, 接收者要自己弄一个, 这个东西是用来做keystone审计用的| | | | |
 |DEFAULT|default_publisher_id|socket.gethostname()| |默认为None, 代码中会自动使用socket.gethostname()|
 |DEFAULT|notification_format|basic|basic, cadf|cadf是basic的扩展, 比basic多了发起者的信息|
