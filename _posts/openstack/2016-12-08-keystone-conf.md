@@ -24,14 +24,23 @@ tag: ["openstack", "python"]
 |DEFAULT|member_role_name|_member_| | |
 |DEFAULT|crypt_strength|10000|1000~100000|加密字符串的长度,越长加密消耗的性能越多|
 |DEFAULT|list_limit|None|int|全局list长度,默认为无限制,各个selection中的以自己的list_limit为准|
+
+---
+    wtf!!!
+---
+
 |DEFAULT|domain_id_immutable|True|true false|是否允许切换domain  即将移除的配置|
 |DEFAULT|strict_password_check|False|true false|设置为false的时候,自动截断超过长度的password|
 |DEFAULT|secure_proxy_ssl_header|HTTP_X_FORWARDED_PROTO| |ssl有关  估计对应的http服务里要带入的http head|
 |DEFAULT|insecure_debug|False|true  false|和调试有关|
 
+
+
 ---
     wtf
 ---
+
+
 
 |From keystone.notifications     对外通知配置,比如配置notification_opt_out=identity.user.created.那么当创建用户的时候,就会发送一个对外通知.这个是走ampq的, publisher_id就是注册的publisher, 接收者要自己弄一个, 这个东西是用来做keystone审计用的| | | | |
 |DEFAULT|default_publisher_id|socket.gethostname()| |默认为None, 代码中会自动使用socket.gethostname()|
