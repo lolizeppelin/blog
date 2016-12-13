@@ -14,6 +14,7 @@ tag: ["openstack", "python"]
 ## 我们以keystone为例一步步看wsgi服务器的启动与paste.deploy的url映射
 
 先截取一部分ini文件先做大致说明
+
 ```config_file
 [composite:main]
 use = egg:Paste#urlmap
@@ -131,6 +132,7 @@ install -D -m 644 MANIFEST.in %{buildroot}%{_docdir}/%{name}-%{version}
 我们现在来看启动过程,
 init里直接调用的keyston-all来启动,
 实际就是启动两个server
+
 ```python
 # 通过绿色线程启动两个进程的过程大致如下,count不配置的话直接用cpu的数量
 def create_servers():
@@ -151,11 +153,14 @@ def create_servers():
     return servers
 ```
 后面
+
 ```python
 def create_server(conf, name, host, port, workers):
     app = keystone_service.loadapp('config:%s' % conf, name)
 ```
+
 实际调用
+
 ```python
 def loadapp(conf, name):
     # NOTE(blk-u): Save the application being loaded in the controllers module.
@@ -164,13 +169,14 @@ def loadapp(conf, name):
     controllers.latest_app = deploy.loadapp(conf, name=name)
     return controllers.latest_app
 ```
+
 两个server对应的name分别为admin和main,都使用loadapp启动.
 因为调用的是deploy.loadapp,所以会匹配到[composite:main]和[composite:admin]这两段配置
 
     eventlet的封装里初始化了全局变量, 不存在因为全局变量问题必须多进程.
     public 和admin的 worker count可以多进程也可以单进程
 
-主进程在调用launch_service之前（最终fork之前）先调用了listen
+主进程在调用launch_service之前（最终fork之前）先调用了listen,
 fork后通过self.launcher = self._child_process(wrap.service)下的launcher.launch_service(service)启动循环.
 socket数据接收直接在各个子进程 通过dup_socket = self.socket.dup() 复制出来的socket accept(看下面的说明来理解多进程接受数据).
 socket如何接受数据 处理分包粘包都是在eventlet.wsgi的代码中
@@ -187,9 +193,8 @@ socket如何接受数据 处理分包粘包都是在eventlet.wsgi的代码中
     因为eventlet中socket accept的时候没有用异步,所以这里的多进程写起来就很简单了
     现在终于搞清楚了,顺便,每个进程中也使用了协程来支持多个请求
 
-#### 接下来我们继续
+#### 接下来我们继续loapp的源码
 
-loapp的源码
 ```python
 def loadapp(uri, name=None, **kw):
     return loadobj(APP, uri, name=name, **kw)
