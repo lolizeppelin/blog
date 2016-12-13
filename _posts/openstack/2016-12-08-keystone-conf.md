@@ -16,12 +16,6 @@ tag: ["openstack", "python"]
 |From keystone       keystone 基本配置| | | | |
 |DEFAULT|admin_token|None| |管理员token,使用这个token的就是管理员,通过[filter:admin_token_auth]实现.新安装的时候数据库里没管理员,所以没法登陆,设置这个管理员token,那么以这个token登陆的都是管理员|
 |DEFAULT|public_endpoint|http://server:5000| |比如你站点配置不在根目录,使用了下级目录的时候,需要配置这两个值指向下级目录.例如http://server:5000/path|
-
----
-    石帆胜丰
----
-
-
 |DEFAULT|admin_endpoint|http://server:35357|同上|
 |DEFAULT|max_project_tree_depth|5|int|项目深度,子项目下面还有子项目|
 |DEFAULT|max_param_size|64|int|最大id长度|
@@ -38,6 +32,13 @@ tag: ["openstack", "python"]
 |DEFAULT|default_publisher_id|socket.gethostname()| |默认为None, 代码中会自动使用socket.gethostname()|
 |DEFAULT|notification_format|basic|basic, cadf|cadf是basic的扩展, 比basic多了发起者的信息|
 |DEFAULT|notification_opt_out|[]|identity.user.created identity.authenticate.success|可以通过重复配置这个key来支持多个notification_opt_out,默认为空列也就是不对外发送消息|
+
+---
+    石帆胜丰
+---
+
+
+
 |From oslo.log   log配置相关      里面的配置说明比较清晰,就不再这里列出了| | | | |
 |From oslo.messaging rpc通信的配置, 因为只使用rabbit,所以和rabbit没关系的都不列出,这里可以看出配置还是有点乱 为了兼容以前的还保留了好多字段, zmq的所有配置都还在default里,  后面oslo_messaging_rabbit部分还有大量rabbit配置| | | | |
 |DEFAULT|rpc_backend|rabbit|amqp  zmq rabbit|rpc通信的方式, 看代码里好像还有fake kafka pika等方式,rabbit驱动就是对kombu的再次封装,其实都是pika的封装|
