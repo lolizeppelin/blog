@@ -14,7 +14,7 @@ tag: ["openstack", "python"]
 |selection|key|默认值|可选取值|说明|
 |:--|:--|:--|:--|:--|
 |From keystone       keystone 基本配置|||||
-|DEFAULT|admin_token|None||管理员token,使用这个token的就是管理员,通过[filter:admin_token_auth]实现.新安装的时候数据库里没管理员,所以没法登陆,设置这个管理员token,那么以这个token登陆的都是管理员|
+|DEFAULT|admin_token|None| |管理员token,使用这个token的就是管理员,通过[filter:admin_token_auth]实现.新安装的时候数据库里没管理员,所以没法登陆,设置这个管理员token,那么以这个token登陆的都是管理员|
 |DEFAULT|public_endpoint|[http://server:5000](http://server:5000/)||比如你站点配置不在根目录,使用了下级目录的时候,需要配置这两个值指向下级目录.例如http://server/path:5000|
 |DEFAULT|admin_endpoint|[http://server:35357](http://server:35357/)|||
 |DEFAULT|max_project_tree_depth|5|int|项目深度,子项目下面还有子项目|
