@@ -20,6 +20,8 @@ tag: ["openstack", "python"]
 
 ---
 
+---
+
 |DEFAULT|public_endpoint|[http://server:5000](http://server:5000/)||比如你站点配置不在根目录,使用了下级目录的时候,需要配置这两个值指向下级目录.例如http://server/path:5000|
 |DEFAULT|admin_endpoint|[http://server:35357](http://server:35357/)|||
 |DEFAULT|max_project_tree_depth|5|int|项目深度,子项目下面还有子项目|
