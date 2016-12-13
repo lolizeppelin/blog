@@ -21,11 +21,6 @@ tag: ["openstack", "python"]
 |DEFAULT|max_param_size|64|int|最大id长度|
 |DEFAULT|max_token_size|8192|int|token最大长度|
 |DEFAULT|member_role_id|9fe2ff9ee4384b1894a90878d3e92bab| |add_user_to_project函数会调用member_role_id,如果数据库里找不到对应的member_role_id会用配置文件里的id和name去创建一个.dashboard里会配置OPENSTACK_KEYSTONE_DEFAULT_ROLE需要与这个相同.member_role_id最好使用一个md5形式的字符串以便统一|
-
----
-    wtf
----
-
 |DEFAULT|member_role_name|_member_| | |
 |DEFAULT|crypt_strength|10000|1000~100000|加密字符串的长度,越长加密消耗的性能越多|
 |DEFAULT|list_limit|None|int|全局list长度,默认为无限制,各个selection中的以自己的list_limit为准|
