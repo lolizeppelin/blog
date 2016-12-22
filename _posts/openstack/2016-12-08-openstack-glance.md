@@ -112,7 +112,8 @@ work_dir = /home/glance/work
     glance要缓存token只需要配置memcache服务器就可以了
     token不需要设置前缀,代码里有让key唯一的方法
 
-glacne的入口,这里可以看出我们的访问url是/v2, app是glance.api.v2.router:API.factory,
+glacne的入口,这里可以看出我们的访问url是/v2, app是glance.api.v2.router:API.factory
+
 ```config_file
 [pipeline:glance-api-keystone]
 pipeline = cors healthcheck versionnegotiation osprofiler authtoken context  rootapp
@@ -127,7 +128,6 @@ paste.composite_factory = glance.api:root_app_factory
 paste.app_factory = glance.api.v2.router:API.factory
 
 ```
-
 
 router定位到
 

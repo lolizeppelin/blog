@@ -1,6 +1,6 @@
 ---
 layout: post
-title:  "OpenStack Mitaka从零开始 urlmap映射过程"
+title:  "OpenStack Mitaka从零开始 通过keystone理解urlmap映射过程"
 date:   2016-12-06 15:05:00 +0800
 categories: "虚拟化"
 tag: ["openstack", "python"]
