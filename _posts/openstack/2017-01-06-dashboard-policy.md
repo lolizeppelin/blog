@@ -64,7 +64,8 @@ dashboard不使用v3版的policy文件会有异常,role为admin的的用户不�
     Jan  6 18:39:21 openstack uwsgi: TypeError: 'Token' object has no attribute '__getitem__'
 
 
-原因在于传入的cred的token类没有
+原因在于传入的cred参数中的token类没有
+
 ```python
     __getattr__
 ```
