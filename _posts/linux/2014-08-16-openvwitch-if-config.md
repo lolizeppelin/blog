@@ -1,7 +1,7 @@
 ---
 layout: post
 title:  "网卡/bond网卡自动并绑定到ovs bridge"
-date:   2016-12-06 15:05:00 +0800
+date:   2014-08-16 15:05:00 +0800
 categories: "虚拟化"
 tag: ["shell"]
 ---

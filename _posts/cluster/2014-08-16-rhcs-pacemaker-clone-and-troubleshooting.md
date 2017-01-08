@@ -1,7 +1,7 @@
 ---
 layout: post
 title:  "pacemaker的clone配置说明以及RHCS集群故障处理"
-date:   2016-12-06 15:05:00 +0800
+date:   2016-08-16 15:05:00 +0800
 categories: "集群"
 tag: ["rhcs", "drbd", "pacemaker"]
 ---

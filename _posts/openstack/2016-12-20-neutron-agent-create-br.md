@@ -1,7 +1,7 @@
 ---
 layout: post
 title:  "OpenStack Mitaka从零开始 nova通过neutron分配网络的过程(3)"
-date:   2016-12-06 15:05:00 +0800
+date:   2016-12-20 15:05:00 +0800
 categories: "虚拟化"
 tag: ["openstack", "python"]
 ---

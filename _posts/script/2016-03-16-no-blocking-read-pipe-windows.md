@@ -1,7 +1,7 @@
 ---
 layout: post
 title:  "windows非阻塞读取管道内容 "
-date:   2016-12-14 12:50:00 +0800
+date:   2016-03-16 12:50:00 +0800
 categories: "工具脚本"
 tag: ["python", "windows"]
 ---
