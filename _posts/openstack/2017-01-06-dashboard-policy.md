@@ -126,3 +126,5 @@ class GenericCheck(Check):
         else:
             return self._find_in_dict(test_value, path_segments, match)
 ```
+
+-v- 这算不算给开源修过bug  233~~~

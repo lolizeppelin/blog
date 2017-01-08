@@ -382,6 +382,7 @@ def clean_create(file_name):
     """
     logging.info('删除文件创建语句 %s' % os.path.join(os.getcwd(), file_name))
     f = open(file_name, 'rb+')
+    # 顺便实例下nmap的使用
     buffer_map = mmap.mmap(f.fileno(), length=buffer_size, access = mmap.ACCESS_WRITE, offset=0)
     # 读取前4096字节
     text = buffer_map.read(buffer_size)
@@ -392,6 +393,7 @@ def clean_create(file_name):
     # 替换结果写入nmap中
     buffer_map.write(ret)
     buffer_map.flush()
+    buffer_map.close()
     f.close()
 
 ```
