@@ -10,7 +10,20 @@ tag: ["openstack", "python"]
 {:toc}
 
 
-nova创建虚拟器的时候会调用allocate_for_instance去创建网络,我们通过网络的创建来分析下neutron创建网络的过程
+nova创建虚拟机的时候最终会调用allocate_for_instance去创建网络,
+
+过程为
+
+    ComputeManager实例中
+    _build_and_run_instance---_do_build_and_run_instance---
+    _build_and_run_instance---_build_resources---_build_networks_for_instance
+    _allocate_network---_allocate_network_async---network_api.allocate_for_instance
+
+    network_aipj就是neutronv2.api.API
+    __
+---
+
+我们通过neutronv2.api.API来分析下neutron创建网络的过程
 
 ---
     这里是allocate_for_instance
