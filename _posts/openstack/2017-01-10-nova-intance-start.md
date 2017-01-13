@@ -1,6 +1,6 @@
 ---
 layout: post
-title:  "OpenStack Mitaka从零开始 nova-compute启动虚拟机实例"
+title:  "OpenStack Mitaka从零开始 nova-compute启动虚拟机实例过程"
 date:   2017-01-06 15:05:00 +0800
 categories: "虚拟化"
 tag: ["openstack", "python"]
@@ -19,7 +19,7 @@ def start_instance(self, context, instance):
     self._notify_about_instance_usage(context, instance, "power_on.start")
     # 启动intance
     self._power_on(context, instance)
-    # 或去启动结果
+    # 获取启动结果
     instance.power_state = self._get_power_state(context, instance)
     instance.vm_state = vm_states.ACTIVE
     instance.task_state = None
@@ -120,7 +120,7 @@ def _hard_reboot(self, context, instance, network_info,
     #             does we need to (re)generate the xml after the images
     #             are in place.
 
-    # 生成libvirt的xml, write_to_disk参数控制讲xml内容写入到磁盘(也就是这里重新生成了qemu用的xml)
+    # 生成libvirt的xml, write_to_disk参数控制讲xml内容写入到磁盘(也就是这里重新生成了libvirt用的xml)
     xml = self._get_guest_xml(context, instance, network_info, disk_info,
                               instance.image_meta,
                               block_device_info=block_device_info,
@@ -199,16 +199,21 @@ def _hard_reboot(self, context, instance, network_info,
         guest = None
         try:
             # 这里做了个定时通知事件
-            # 设置防火墙、并启动虚拟机以后
-            # 检测未激活的port id事件
-            # 这玩意只知道大概意思,反正我是没看明白
+            # 在设置防火墙、并启动虚拟机以后
+            # 会检测未激活的port id事件直到超时
+            # 这个event部分的代码只知道大概意思,反正我是没看明白
             # 装饰器看着烦
             with self.virtapi.wait_for_instance_event(
                     instance, events, deadline=timeout,
                     error_callback=self._neutron_failed_callback):
+                # 插入虚拟网卡, 当我们使用openvswitch的时候
+                # 这行代码没有任何功能
+                # 因为是直接配置在xml里,qeum启动的时候自动处理
                 self.plug_vifs(instance, network_info)
+                # 设置基础防火墙规则
                 self.firewall_driver.setup_basic_filtering(instance,
                                                            network_info)
+                # 执行生成iptable贵规则
                 self.firewall_driver.prepare_instance_filter(instance,
                                                              network_info)
                 # 我们不是lxc,会直接到后面_create_domain                                            
@@ -220,6 +225,8 @@ def _hard_reboot(self, context, instance, network_info,
                 # 设置防火墙
                 self.firewall_driver.apply_instance_filter(instance,
                                                            network_info)
+        # 后面是捕获错误,例如前面的网卡插入报错、event执行检测到超时之类的
+        # 出错了就poweroff
         except exception.VirtualInterfaceCreateException:
             # Neutron reported failure and we didn't swallow it, so
             # bail here
@@ -250,6 +257,6 @@ def _hard_reboot(self, context, instance, network_info,
 
 总结下
 
-    1、虚拟机的网卡最终是novacompute创建到openvswitch的网桥上的
-    2、虚拟机启动的时候一个通过一个事件监控虚拟机的网卡事件
-    3、如果不用openvswitch会使用sriov？
+    1、使用openvswitch的时候,虚拟机的网卡最终是novacompute创建xml后,qemu启动虚拟机并绑定到openvswitch的网桥上
+    2、如果不用openvswitch的时候网卡也是nove通过各种pulg函数生成网卡的
+    3、虚拟机启动的时候一个通过一个事件监控虚拟机的网卡事件,超时就power off
