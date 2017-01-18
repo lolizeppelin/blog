@@ -16,7 +16,7 @@ neutron ml(openvswitch) agent分配创建br
 
 ---
 
-    agent守护进程的init类
+    agent守护进程的init
 
 ```python
 class OVSNeutronAgent(sg_rpc.SecurityGroupAgentRpcCallbackMixin,

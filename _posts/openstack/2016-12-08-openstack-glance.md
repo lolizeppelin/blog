@@ -100,6 +100,7 @@ work_dir = /home/glance/work
 ---
 
 #### 附加说明
+
     glance的默认端口写在代码里,配置文件里反而没有默认值
     glance的cache不是放token的cache
     glance存放的镜像文件可以是本地的,可以是http的可以是swift的

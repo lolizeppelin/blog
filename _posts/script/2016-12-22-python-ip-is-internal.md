@@ -3,7 +3,7 @@ layout: post
 title:  "判断IP地址是否为内网IP"
 date:   2016-12-22 12:50:00 +0800
 categories: "工具脚本"
-tag: ["python"]
+tag: ["python", "linux"]
 ---
 
 * content

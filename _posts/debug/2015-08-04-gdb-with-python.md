@@ -3,7 +3,7 @@ layout: post
 title:  "python配合gdb调试程序"
 date:   2015-08-04 15:05:00 +0800
 categories: "debug"
-tag: ["python"]
+tag: ["python", "linux"]
 ---
 
 * content
