@@ -8,12 +8,7 @@ permalink: /reference/
 {:toc}
 
 
-[淘宝团队的博客]
+[旧博客地址]
 =====================
-淘宝团队的积累
-[http://www.searchtb.com/](http://www.searchtb.com/)
-
-[axman]
-=====================
-多线程相关写的比较好
-[http://blog.csdn.net/axman/article/category/894625](http://blog.csdn.net/axman/article/category/894625)
+旧博客地址
+[链接](http://blog.chinaunix.net/uid/23504396.html)

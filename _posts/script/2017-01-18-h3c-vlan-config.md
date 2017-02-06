@@ -1,13 +1,69 @@
 ---
 layout: post
-title:  "OpenStack Mitaka从零开始 虚拟机实例通过openvwitch通外网的简要过程,dvr与dvr-snat的区别"
+title:  "H3C WX3010E无线交换机配置"
 date:   2017-01-18 15:05:00 +0800
-categories: "虚拟化"
-tag: ["网络"]
+categories: "网络基础"
+tag: ["3层交换机"]
 ---
 
 * content
 {:toc}
+
+首先感谢这篇[blog](http://blog.sina.com.cn/s/blog_51f491d30102uyuz.html)
+
+首先是说明书,百度一下可以到H3C官网下载到
+
+    H3C WX3000 系列有线无线一体化交换机交换引擎.pdf
+    H3C WX系列无线控制产品 Web网管配置指导-6W106-整本手册.pdf
+    H3C WX3010E有线无线一体化交换机安装指导-APW100-整本手册.pdf
+    H3C S5000PV2_EI-CMW520-R1106 版本说明书.pdf
+
+
+交换机分为两个部分
+
+1.一个是交换机部分,就是和不同交换机一样,设置对应到设备上的rj45口,这部分的系统说明书称之为交换引擎
+2.无线网络控制器,这部分的系统主要用于控制fit ap
+
+
+先看交换模块
+
+
+    GigabitEthernet1/0/1 ~ GigabitEthernet1/0/8
+    对应交换机上的 1 ~ 8 Rj45 端口
+
+    GigabitEthernet1/0/9 ~ GigabitEthernet1/0/10
+    对应交换机上的光纤口(一般来说,每两个光千口和一个Rj45端口公用部分资源,也就是说使用两个光纤口会需要关闭对应的Rj45端口,反之一样,所以9-10需要关闭)
+
+
+    GigabitEthernet1/0/11
+    GigabitEthernet1/0/12
+    上述两个汇聚为Bridge-Aggregation1, 用于链接WLAN控制模块,这里就是和普通交换机区别的地方
+
+
+
+再看控制模块
+
+    GigabitEthernet1/0/1     
+    GigabitEthernet1/0/2
+    上述两个汇聚为Bridge-Aggregation1, 用于链接交换模块
+
+
+
+
+
+
+
+
+进入到模板
+wlan service-template 21
+关闭当前模板
+service-template disable
+
+
+
+
+VLAN 86 带有dhcp,用于给每个ap分配地址
+
 
 
 
