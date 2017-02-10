@@ -11,15 +11,15 @@ tag: ["openstack", "python"]
 
 
 #### 前言：下面所说的veth pair都是只veth pair这种方式而不是指linux的veth pair. openstack默认使用openvwitch来实现veth pair.
-但是早期资料表示openvwitch实现的veth pair不支持tc,所以要流控需要配置为使用linux自带的veth pair.
-
-参考[链接](http://bingotree.cn/?p=708&utm_source=tuicool&utm_medium=referral)
+但是早期资料表示openvwitch实现的veth pair不支持tc,所以要用tc流控需要配置为使用linux自带的veth pair.
 
 ---
 
+dvr参考[链接](http://bingotree.cn/?p=708&utm_source=tuicool&utm_medium=referral)
+
 neutron配置为dvr-snat,这样无外网ip的实例的才能访问外网
 
-1.网络分配(暂时介绍和dhcp相关的东西,所有网络不开DHCP,但是虚拟机要或去ip必须有dhcp服务)
+1.网络分配(虽然虚拟机要获取ip必须有通过dhcp,但是因为dhcp会多出一个和路由没关的空间,所以暂时不介绍和dhcp相关的东西,所有网络不开DHCP,通过vnc进入到虚拟机中手动分配)
 
     没有实际的外网IP,所以直接用一个172的网段当外网
     这里我们使用172.30.0.0/24
