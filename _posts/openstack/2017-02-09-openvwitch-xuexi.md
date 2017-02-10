@@ -3,7 +3,7 @@ layout: post
 title:  "OpenStack Mitaka从零开始 openvwitch学习,流表解读,vxlan隧道"
 date:   2017-02-05 15:05:00 +0800
 categories: "虚拟化"
-tag: ["openstack", "python"]
+tag: ["linux", "openvwitch"]
 ---
 
 * content
@@ -75,8 +75,11 @@ ovs中的端口有多种类型
                 type: internal
 
 1.br-int中的br-int是和网桥同名端口
+
 2.br-int中的tap网卡是和虚拟机网卡相连的端口
+
 3.br-tun中的patch-int和br-int的patch-tun是一对path用于两个网桥互联
+
 4.br-tun中的vxlan-0a0a0033是vlan隧道端口,ifconfig中可以看到vlan网卡叫vxlan_sys_4789,不一定要和端口名字相同
 
 ---
@@ -101,6 +104,7 @@ OpenvSwitch的组成[参考](http://blog.csdn.net/lizheng2300/article/details/54
     ovs-tcpundump：tcpdump的补丁，解析 OpenFlow的消息。
 
 
+### 现在我们来学习流表
 
 常规列
 
@@ -110,7 +114,7 @@ OpenvSwitch的组成[参考](http://blog.csdn.net/lizheng2300/article/details/54
 条件列
 
     table：流表项所属的table编号。
-    in_port:传递数据包的端口的 OpenFlow 端口编号
+    in_port:传递数据包的端口的 OpenFlow 端口编号(入口)
     dl_vlan:数据包的 VLAN Tag 值，范围是 0-4095，0xffff 代表不包含 VLAN Tag 的数据包
     dl_src/dl_dst:匹配源或者目标的 MAC 地址,加斜线表示用通配符匹配
                   01:00:00:00:00:00 多播
@@ -160,7 +164,8 @@ OpenvSwitch的组成[参考](http://blog.csdn.net/lizheng2300/article/details/54
 
 ### 上面的列只是部分列说明,详细可以看[文档](http://openvswitch.org/support/dist-docs/ovs-ofctl.8.txt),也就是man 8 ovs-ofctl
 
-### 现在我们来分析下流表
+一个具体的流表例子如下
+
 
     ===============================这里是mac对应IP================================================================================================================
     fa:16:3e:2f:e7:eb     192.168.1.1  子网网关
@@ -241,3 +246,4 @@ OpenvSwitch的组成[参考](http://blog.csdn.net/lizheng2300/article/details/54
     因为你看br-tun里根本就没有其他port可以出去的规则(br-ex的流表里只有一个normal规则)
     vxlan这个port最后会找本地一个ip为10.10.0.52的网卡把包发出去
     这个错误是因为之前看到br-ex绑定物理网卡,所以我也以为br-tun也要绑物理网卡,导致我两台虚拟机不能互通
+    顺便,output到3后直接出去, 不会产生又匹配到前面in_port:3这样的循环
