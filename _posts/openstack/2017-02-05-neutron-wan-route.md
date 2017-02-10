@@ -19,7 +19,7 @@ tag: ["openstack", "python"]
 
 neutron配置为dvr-snat,这样无外网ip的实例的才能访问外网
 
-1.网络分配(暂时不学习和dhcp相关的东西,所有网络不开DHCP)
+1.网络分配(暂时介绍和dhcp相关的东西,所有网络不开DHCP,但是虚拟机要或去ip必须有dhcp服务)
 
     没有实际的外网IP,所以直接用一个172的网段当外网
     这里我们使用172.30.0.0/24
@@ -86,8 +86,8 @@ neutron配置为dvr-snat,这样无外网ip的实例的才能访问外网
     [root@openstack ~]# ip netns exec qrouter-a74892a9-8fea-4495-ad58-4d1244065b9c ip rule show
     0:      from all lookup local
     32766:  from all lookup main
-    32767:  from all lookup default
-    3232235777:     from 192.168.1.1/24 lookup 3232235777   # default路由表没有被匹配的是后,走这个路由表
+    32767:  from all lookup default   # default路由表是空表
+    3232235777:     from 192.168.1.1/24 lookup 3232235777   # main路由表没有被匹配的是后,走这个路由表
 
     # 3232235777路由表信息,就一条,网关是192.168.1.4
     default via 192.168.1.4 dev qr-e0711d58-58

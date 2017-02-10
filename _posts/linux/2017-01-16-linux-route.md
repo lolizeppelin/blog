@@ -212,6 +212,8 @@ scop的常用类型
           The multiple routing tables enter the game when policy routing is used.
           当策略路由使用的时候,多个路由表将加入"游戏",具体使用那个路由表,参考后面的ip rule
           在没有设置过ip rule的情况下,所有网络包都先走一遍local表,在local表被没匹配就走main表(在走local表之前会先查询路由缓存)
+          我们直接运行route和ip route显示的就是main表的内容
+          default路由表是一个路由表
 
 
           [root@second ~]# cat /etc/iproute2/rt_tables
@@ -224,10 +226,12 @@ scop的常用类型
 proto是什么
 
     protocol RTPROTO
-           the  routing  protocol  identifier  of  this  route.   RTPROTO may be a number or a string from the file
-           /etc/iproute2/rt_protos.  If the routing protocol ID is not given, ip assumes  protocol  boot  (i.e.  it
-           assumes  the  route  was  added by someone who doesn’t understand what they are doing). Several protocol
-           values have a fixed interpretation.  Namely:
+           the  routing  protocol  identifier  of  this  route.   
+           RTPROTO may be a number or a string from the file /etc/iproute2/rt_protos.  
+           If the routing protocol ID is not given, ip assumes  protocol  boot  
+           (i.e.  it assumes  the  route  was  added by someone
+           who doesn’t understand what they are doing).
+           Several protocol values have a fixed interpretation.  Namely:
            路由的协议识标符，RTPROTO可能是一个数字或者string,具体查询 /etc/iproute2/rt_protos
            如果协议ID没有指定,ip命令将协议默认为boot(协议为boot的路由被认为是无效路由)
            一些常用的已知路由协议
@@ -239,20 +243,20 @@ proto是什么
                    kernel - the route was installed by the kernel during autoconfiguration.
                             由内核自动设置的路由
 
-                   boot - the route was installed during the bootup sequence.  If a routing daemon starts, it  will
-                   purge all of them.
+                   boot - the route was installed during the bootup sequence.  
+                   If a routing daemon starts, it  will purge all of them.
                           这个路由在启动序列的时候被生成,当一个路由daemon启动后,将清理掉protocol为boot的路由
                           前面有说明,没有指定protocol的路由将会默认为是boot
 
-                   static  - the route was installed by the administrator to override dynamic routing. Routing dae-
-                   mon will respect them and, probably, even advertise them to its peers.
+                   static  - the route was installed by the administrator to override dynamic routing.
+                   Routing daemon will respect them and, probably, even advertise them to its peers.
                              由管理员生成的,覆盖动态路由,路由进程将按照其中的设置通知到其他同伴
 
                    ra - the route was installed by Router Discovery protocol.
                         由路由发现协议生成的路由
 
-           The rest of the values are not reserved and the administrator is free to assign (or not to assign)  pro-
-           tocol tags.
+           The rest of the values are not reserved and the administrator
+           is free to assign (or not to assign)  protocol tags.
            剩下的数值都不是保留协议值,管理员可以任意处理
 
 
