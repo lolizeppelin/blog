@@ -105,6 +105,7 @@ def setup_tunnel_br(self, tun_br_name=None):
     # 就目前代码来看,tun_br没有外链到具体物理网卡的过程
     # 所以,应该是在系统层面设置好br_tun和并链接到物理网卡
     # neutron只会重新设置br_tun的datapath_type
+    # (注意,当时的上面关于br_tun的理解是错的,br_tun和br_ex不一样,不要在系统层设置好br-tun)
     # 这里的处理方式和setup_physical_bridges是一样的
     # 都是在neutron外部管理br和物理网卡的关联
     # 只有br_int是完全由neutron agent管理的
