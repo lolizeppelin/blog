@@ -122,6 +122,7 @@ scope是什么 相关[文档地址](http://linux-ip.net/html/tools-ip-address.ht
     因此不需要路由到任何设备,local表中的那条scope host到lo接口的那条记录就是一个列子
     通常来说, 地址所在的其他接口(lo以外接口)的是公共接口,也就是说他们的scope是全局的.当我们使用ip route讨论路由时
     我们将再次使用到scope,那时候我们还会遇到并讨论link scope
+    个人总结：scope就是作用域的意思
 
 
     man 8 ip
