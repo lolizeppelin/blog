@@ -55,30 +55,7 @@ def _power_on(self, context, instance):
 
 get_instance_nw_info实际调用为nova.network.neutronv2.api.API中的_get_instance_nw_info
 
-```python
-    def _get_instance_nw_info(self, context, instance, networks=None,
-                              port_ids=None, admin_client=None,
-                              preexisting_port_ids=None, **kwargs):
-        # NOTE(danms): This is an inner method intended to be called
-        # by other code that updates instance nwinfo. It *must* be
-        # called with the refresh_cache-%(instance_uuid) lock held!
-        LOG.debug('_get_instance_nw_info()', instance=instance)
-        # Ensure that we have an up to date copy of the instance info cache.
-        # Otherwise multiple requests could collide and cause cache
-        # corruption.
-        compute_utils.refresh_info_cache_for_instance(context, instance)
-        # 这里访问neutron返回实例使用的网络的相关信息,子网、网桥、port的id之类
-        # 后面nova中生成的libvirt的xml中用的网卡名就是tap加上这里获取的port id
-        # 最终网卡名按最大网卡名长度切片, 所用网桥也是这里返回的
-        nw_info = self._build_network_info_model(context, instance, networks,
-                                                 port_ids, admin_client,
-                                                 preexisting_port_ids)
-        return network_model.NetworkInfo.hydrate(nw_info)
-
-```
-
-
-
+这部分可以[参考](http://www.lolizeppelin.com/2016/12/14/nova-allocate-network/)
 
 实际执行power on的类为nova.virt.libvirt.driver.LibvirtDriver
 
@@ -120,7 +97,7 @@ def _hard_reboot(self, context, instance, network_info,
     #             does we need to (re)generate the xml after the images
     #             are in place.
 
-    # 生成libvirt的xml, write_to_disk参数控制讲xml内容写入到磁盘(也就是这里重新生成了libvirt用的xml)
+    # 生成libvirt的xml, write_to_disk参数控制讲xml内容写入到磁盘(也就每次虚拟机启动这里都重新生成了libvirt用的xml)
     xml = self._get_guest_xml(context, instance, network_info, disk_info,
                               instance.image_meta,
                               block_device_info=block_device_info,
@@ -132,7 +109,7 @@ def _hard_reboot(self, context, instance, network_info,
         backing_disk_info = self._get_instance_disk_info(instance.name,
                                                          xml,
                                                          block_device_info)
-        # 创建备份盘
+        # 创建备份盘？
         self._create_images_and_backing(context, instance, instance_dir,
                                         backing_disk_info)
 

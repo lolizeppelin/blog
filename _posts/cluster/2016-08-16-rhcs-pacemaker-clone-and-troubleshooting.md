@@ -206,13 +206,12 @@ fence相关错误是因为没有fence设备不能强制重启节点,但主要原
 
 man 一下gfs2_tool, 可以知道gfs2_tool可以修改gfs2的table和proto
 
-
     [root@youzhai-web1 dlm]# gfs2_tool sb /dev/drbd0 proto
     current lock protocol name = "lock_dlm"
     [root@youzhai-web1 dlm]# gfs2_tool sb /dev/drbd0 table
     current lock table name = "web_gfs:gfs2_drbd"
 
-我们可以临时修改gfs2使用的dlm表来让其中一个节点正常工作,但是只能一个节点有效
+我们可以临时修改gfs2使用的dlm表来让其中一个节点正常工作,但是可能只有一个节点有效.
 重启所有节点集群是重置dlm的最好方法,但是这里有个坑
 
 1. 节点无法关闭只能kill

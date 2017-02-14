@@ -9,6 +9,71 @@ tag: ["openstack", "python"]
 * content
 {:toc}
 
+```python
+class APIParamsCall(object):
+    """A Decorator to support formatting and tenant overriding and filters."""
+    def __init__(self, function):
+        self.function = function
+
+    def __get__(self, instance, owner):
+        def with_params(*args, **kwargs):
+            _format = instance.format
+            if 'format' in kwargs:
+                instance.format = kwargs['format']
+            ret = self.function(instance, *args, **kwargs)
+            instance.format = _format
+            return ret
+        return with_params
+```
+
+
+```python
+
+def get(self, action, body=None, headers=None, params=None):
+    return self.retry_request("GET", action, body=body,
+                              headers=headers, params=params)
+
+def list(self, collection, path, retrieve_all=True, **params):
+    if retrieve_all:
+        res = []
+        request_ids = []
+        for r in self._pagination(collection, path, **params):
+            res.extend(r[collection])
+            request_ids.extend(r.request_ids)
+        return _DictWithMeta({collection: res}, request_ids)
+    else:
+        return _GeneratorWithMeta(self._pagination, collection,
+                                  path, **params)
+
+def _pagination(self, collection, path, **params):
+    if params.get('page_reverse', False):
+        linkrel = 'previous'
+    else:
+        linkrel = 'next'
+    next = True
+    while next:
+        res = self.get(path, params=params)
+        yield res
+        next = False
+        try:
+            for link in res['%s_links' % collection]:
+                if link['rel'] == linkrel:
+                    query_str = urlparse.urlparse(link['href']).query
+                    params = urlparse.parse_qs(query_str)
+                    next = True
+                    break
+        except KeyError:
+            break
+
+@APIParamsCall
+def list_ports(self, retrieve_all=True, **_params):
+    """Fetches a list of all ports for a tenant."""
+    # Pass filters in "params" argument to do_request
+    return self.list('ports', self.ports_path, retrieve_all,
+                     **_params)
+
+```
+
 
 neutron server分配创建port
 
