@@ -9,6 +9,7 @@ tag: ["3层交换机"]
 * content
 {:toc}
 
+
 首先感谢这篇[blog](http://blog.sina.com.cn/s/blog_51f491d30102uyuz.html)
 
 首先是说明书,百度一下可以到H3C官网下载到
