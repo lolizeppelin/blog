@@ -78,7 +78,8 @@ topics.test()
 ```
 
 输出为
-```python
+
+```text
 1
 2
 1
@@ -89,9 +90,7 @@ topics.test()
 ```
 
     证明了前面——这个被引用的自由变量将和这个函数一同存在，即使已经离开了创造它的环境也不例外。
-    顺便存在了一个问题,闭包内存是怎么释放的
-
-openstack里很少用到count这样的自由变量,这样就不会有上面的自由变量内存不释放的问题了
+    顺便存在了一个问题,闭包内存是怎么没有释放,这问题我们最后面测试一下
 
 前面的装饰器比较简单,装饰的函数不能接收参数,我们再来一个常见的装饰器的例子
 
@@ -124,7 +123,7 @@ print new_function.__name__
 new_function('lalala')
 ```
 
-    注释那一行和 "print new_function.__name__" 部分有关,自己可以试试放开注释有什么效果。
+注释那一行和 "print new_function" 部分有关,自己可以试试放开注释有什么效果，具体可以参考[这里](http://www.liaoxuefeng.com/wiki/001374738125095c955c1e6d8bb493182103fac9270762a000/001386819879946007bbf6ad052463ab18034f0254bf355000)。
 
 解释下为什么嵌套三层
 
@@ -136,11 +135,11 @@ new_function('lalala')
 
 ```python
 # 这里就明白装饰器的实际作用了
-# 装饰器是一个语法糖,实际的原理是闭包的工作原理
+# 装饰器是一个语法糖,实际的原理是闭包的工作原理(还有一种不是用闭包,用的是后面的描述器)
 delayer(3)(test)('lalala')
 ```
 
-结尾我们来段opentack的代码,这个装饰器用来限定只调用一起启动。要么用eventlet模式要么用stdlib模式，有点类似我们后面要说的单例模式
+现在我们来段opentack的代码,这个装饰器用来限定只调用一起启动。要么用eventlet模式要么用stdlib模式，有点类似我们后面要说的单例模式
 
 ```python
 def configure_once(name):
@@ -175,10 +174,101 @@ def use_eventlet(monkeypatch_thread=None):
 def use_stdlib():
     global httplib, subprocess
     ...
+```
 
+最后我们再来看看自由变量的释放问题,假设文件topics.py
+
+```python
+class Myest(object):
+    def __init__(self):
+        pass
+
+    @counter
+    def t(self, arg='in defuault t'):
+        print str(type(self)) + arg
+        pass
+
+    @counter
+    def u(self, arg='in defuault u'):
+        print str(type(self)) + arg
+
+class Myest2(Myest):
+    def __init__(self):
+        Myest.__init__(self)
+
+    @counter
+    def u(self, arg='in defuault u'):
+        print str(type(self)) + arg
+
+@counter
+def text(arg='out default'):
+    print arg
 
 ```
-## 写在结尾
+
+假设文件为toptest
+
+```python
+from topics import *
+
+def loli():
+    text()
+
+def lolita():
+    t = Myest2()
+    t.u()
+```
+
+我们执行如下代码
+
+```python
+from topics import *
+import toptest
+text()
+text()
+t = Myest()
+x = Myest()
+t.t()
+t.t()
+x.t()
+t.t()
+t.u()
+x.u()
+x.t()
+del t
+del x
+y = Myest()
+y.t()
+z = Myest2()
+z.t()
+z.u()
+test.loli()
+```
+
+输出为
+
+```text
+count:  1 wtfffffffff
+count:  2 out default
+count:  1 <class '__main__.Myest'>in defuault t
+count:  2 <class '__main__.Myest'>in defuault t
+count:  3 <class '__main__.Myest'>in defuault t
+count:  4 <class '__main__.Myest'>in defuault t
+count:  1 <class '__main__.Myest'>in defuault u
+count:  2 <class '__main__.Myest'>in defuault u
+count:  5 <class '__main__.Myest'>in defuault t
+count:  6 <class '__main__.Myest'>in defuault t
+count:  7 <class '__main__.Myest2'>in defuault t
+count:  1 <class '__main__.Myest2'>in defuault u
+count:  3 out default
+count:  2 <class 'topics.Myest2'>in defuault u
+```
+
+我草泥马好恐怖啊完全不会释放,一直存在于模块空间中?
+
+openstack里很少用到count这样的自由变量,这样就不会有上面的自由变量内存不释放的问题了
+
+## 写装饰器在结尾
 
 经过学习以后可以明白,装饰器对python来说还是必须要学习的....因为太多大型项目代码这个,你不熟悉就傻逼了
 
