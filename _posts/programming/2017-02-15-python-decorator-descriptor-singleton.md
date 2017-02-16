@@ -37,7 +37,7 @@ def a(func):
 
 一个函数a里面又定义了函数b, 当函数b引用了a作用域中的变量func的时候,b就是一个闭包。func就是自由变量
 
-我们把上面函数做为装饰器来使用
+我们把上面函数做为装饰器来使用,假设文件为topics
 
 ```python
 def a(func):
@@ -56,13 +56,11 @@ def test():
 @a
 def test2():
     pass
-
 ```
 
-至于count为什么用list不直接用int,可以[参考](http://blog.csdn.net/virtual_func/article/details/50551076),这里的count就是一个函数调用的计数器
+至于自由变量count为什么用list不直接用int,可以[参考](http://blog.csdn.net/virtual_func/article/details/50551076),这里的count就是一个函数调用的计数器
 
-我们发现即使没调用任何函数,上述代码也会输出函数test和test2的名字,假设上面的代码在topics.py中
-
+直接执行topics.py我们发现即使没调用任何函数,上述代码也会输出函数test和test2的名字
 
 ```python
 import topics
@@ -80,6 +78,8 @@ topics.test()
 输出为
 
 ```text
+test
+test2
 1
 2
 1
@@ -248,7 +248,7 @@ test.loli()
 输出为
 
 ```text
-count:  1 wtfffffffff
+count:  1 out default
 count:  2 out default
 count:  1 <class '__main__.Myest'>in defuault t
 count:  2 <class '__main__.Myest'>in defuault t
@@ -264,7 +264,7 @@ count:  3 out default
 count:  2 <class 'topics.Myest2'>in defuault u
 ```
 
-我草泥马好恐怖啊完全不会释放,一直存在于模块空间中?
+我草泥马好恐怖啊完全不会释放
 
 openstack里很少用到count这样的自由变量,这样就不会有上面的自由变量内存不释放的问题了
 
