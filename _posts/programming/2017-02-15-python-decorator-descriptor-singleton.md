@@ -384,7 +384,7 @@ print a.val
     我们的val是
     a.__dict__['x'] (如果class GTest中val不是描述器的话就没有这个优先级问题了)
     还是
-    type(a).__dict__['x']
+    type(a).__dict__['x'].__get__(a, type(a)):
 
     文档中的优先级是这样的
 
