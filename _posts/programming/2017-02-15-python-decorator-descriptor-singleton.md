@@ -767,13 +767,14 @@ class RoutesMiddleware(object):
         ...
 ```
 
-    可以看出RoutesMiddleware是用来封装实际的route(传入的mapper就是routes.Mapper类)
+    可以看出RoutesMiddleware是用来封装route.mapper(传入的mapper就是routes.Mapper类)
     它只在Router初始化的时候创建一个实例。
-    RoutesMiddleware的__call__获取http数据,然后调用route分发到contoler
+    RoutesMiddleware的__call__获取http数据,然后调用mapper分发到contoler
 
 #### 第三个、第四个问题是一起的
 
-    前面不是说分发由RoutesMiddleware做么?
+    前面不是说分发由RoutesMiddleware做么?第四个问题不是解决了？
+    这里为了灵活的处理分发,实际分发的时候传到了外面的_dispatch中
     我们来看看RoutesMiddleware.__call__ 和_dispatch中的具体原始代码
 
 ```python
@@ -812,11 +813,10 @@ class Router(object):
 ```
 
     看见了把, RoutesMiddleware通过mapper生成match, match塞入environ
-    _dispatch 从match中取出match, 然后返回app
-    这个app就是对应的controller,也就说所有的controller也都是wsgi  app
-    这里可以看出其实代码可以写得不需要一个 _dispatch
-    _dispatch放在外面是为了方便继承重写,修改重定向controller
-    __
+    再从_dispatch 从match中取出match, 然后返回app
+    这里可以看出其实代码可以写得不需要一个_dispatch
+    把_dispatch放在外面是为了方便继承重写,修改重定向controller
+    顺便,可以看出controller也是一个wsgi app
 
 我们拿osapi_compute_app_legacy_v2来看看mapper如何映射到Controller
 
