@@ -453,16 +453,14 @@ print a.p
     3 如果一个method变成了function,可以通过__get__方法(因为function是描述器)转为method
 
 
-经过上面学习以后,我们可以来看openstack用的Wsgifyz的类装饰器是如何工作的了,为了便于理解,删除了部分业务代码
+经过上面学习以后,我们可以来看openstack用的Wsgify的类装饰器是如何工作的了,如何分发到controler上的.
 
-顺便openstack的Wsgify用于处理函数,不会出现类和实例中有同名的属性的情况,所有没有优先级问题。
 
 ```python
-#!/usr/bin/python
-# -*- coding: UTF-8 -*-
-
+# 为了便于理解,删除了部分业务代码
+# 顺便openstack的Wsgify用于处理函数,不会出现类和实例中有同名的属性的情况,所有没有优先级问题。
+# 这个class是我们简化了的Wsgify描述器
 class Wsgify(object):
-
     def __init__(self, func=None, loli=None):
         print '~~~~~~~~~~~~~~Wsgify init'
         self.func = func
@@ -470,7 +468,7 @@ class Wsgify(object):
             print 'init func not none, func is ', func
         else:
             print 'func is none'
-        print '~~~~~~~~~~~~~~Wsgify init finsh'
+        print '~~~~~~~~~~~~~~Wsgify init finsh\n'
 
     def __get__(self, instance, owner=None):
         print 'Wsgify __get__'
@@ -480,111 +478,402 @@ class Wsgify(object):
             bound_method = self.func.__get__(instance, owner)
             print self.func, bound_method, bound_method.__get__(instance, owner)
             print type(self.func).__name__, type(bound_method).__name__
-            return self.clone(self.func.__get__(instance, owner))
+            clone = self.clone(self.func.__get__(instance, owner))
+            print 'retrun clone', clone, '\n'
+            return clone
         else:
             return self
 
     def __call__(self, req,  *args, **kwargs):
-
         func = self.func
+        # 这里的作用后面说明
         if func is None:
-            print 'Wsgify __call__ func none, clone func'
+            print 'Wsgify __call__ self.func none, clone func'
             func = req
             return self.clone(func)
+        print 'Wsgify __call__ self.func is', func.__name__, 'with req:', str(req),
+        if len(args) > 0:
+            print 'args:', args[0],
+        print ''
+        if isinstance(req, dict):
+            if len(args) != 1 or kwargs:
+                raise TypeError(
+                    "Calling %r as a WSGI app with the wrong signature")
+            environ = req
+            start_response = args[0]
+            req = 'requets'
+            args = ()
+            resp_callable = self.func(req, *args, **kwargs)
+            return resp_callable(environ, start_response)
         else:
-            print 'Wsgify __call__ func not none, req is ', str(req)
-            resp = self.func(req, *args, **kwargs)
-            return resp
+            return self.func(req, *args, **kwargs)
 
     def clone(self, func=None, **kw):
+        print '\nclone Wsgify intance',
         kwargs = {}
         if func is not None:
+            print 'with is function ', func.__name__,
             kwargs['func'] = func
+        print ''
         return self.__class__(**kwargs)
 
-class Application(object):
+class RoutesMiddleware(object):
+
+    def __init__(self, wsgi_app):
+        print '*********init an RoutesMiddleware************'
+        self.app = wsgi_app
+
+    def __call__(self, environ, start_response):
+        print 'RoutesMiddleware call' ,type(self.app),environ, start_response
+
+        response = self.app(environ, start_response)
+        return response
+
+
+class Router(object):
 
     def __init__(self):
-        pass
+        self._router = RoutesMiddleware(self._dispatch)
 
-    # wsgi的的app要接收2个参数
-    # Application应该写成__call__(self, environ, response)
-    # 但是经过一个Wsgify装饰器就变成了只用一个参数
-    # Wsgify就是一个描述器类
-    # 为了搞清楚Wsgify是如何工作的,就必须把描述器搞清楚
+    @staticmethod
+    @Wsgify
+    def _dispatch(req):
+        print '_dispatch!!!!!!!!!!!! to contoler'
+        return contoler
+
     @Wsgify
     def __call__(self, req):
-        print 'app call', req
+        print '===============before return route ==================='
+        return self._router
 
-print '\n-----------------Application init'
-a = Application()
-print '-----------------Application init finish'
-print type(a.__call__)
-print '-----------------Application test call finish'
+def contoler(environ, start_response):
+    print 'contoler says',
+    print environ, start_response
+    return 'contoler out with' + start_response
 
-print '\n1st input'
-a('test input1')
-print '\n2nd input'
-a('test input2')
+print '-----------------Router init'
+a = Router()
+print '-----------------Router init finish'
+print '-----------------Router test call finish'
+print '\n++++++++++++++++++++++++++++++++++++++++++++\n'
+x = a({'name': '1st input'}, 'wtf')
+print x
+print '\n++++++++++++++++++++++++++++++++++++++++++++\n'
+x = a({'name': '2nd input'}, 'fuck!!!')
+print x
 ```
 
 输出内容为
 
 ```text
 ~~~~~~~~~~~~~~Wsgify init
-init func not none, func is  <function __call__ at 0x0000000002BD5048>
+init func not none, func is  <function _dispatch at 0x0000000002A10128>
 ~~~~~~~~~~~~~~Wsgify init finsh
 
------------------Application init
------------------Application init finish
-Wsgify __get__
-instance is Application <__main__.Application object at 0x0000000002BCD7B8>
-owner is type Application
-<function __call__ at 0x0000000002BD5048> <bound method Application.__call__ of <__main__.Application object at 0x0000000002BCD7B8>> <bound method Application.__call__ of <__main__.Application object at 0x0000000002BCD7B8>>
-function instancemethod
 ~~~~~~~~~~~~~~Wsgify init
-init func not none, func is  <bound method Application.__call__ of <__main__.Application object at 0x0000000002BCD7B8>>
+init func not none, func is  <function __call__ at 0x0000000002A10198>
 ~~~~~~~~~~~~~~Wsgify init finsh
-<class '__main__.Wsgify'>
------------------Application test call finish
 
-1st input
-Wsgify __get__
-instance is Application <__main__.Application object at 0x0000000002BCD7B8>
-owner is type Application
-<function __call__ at 0x0000000002BD5048> <bound method Application.__call__ of <__main__.Application object at 0x0000000002BCD7B8>> <bound method Application.__call__ of <__main__.Application object at 0x0000000002BCD7B8>>
-function instancemethod
-~~~~~~~~~~~~~~Wsgify init
-init func not none, func is  <bound method Application.__call__ of <__main__.Application object at 0x0000000002BCD7B8>>
-~~~~~~~~~~~~~~Wsgify init finsh
-Wsgify __call__ func not none, req is  test input1
-app call test input1
+-----------------Router init
+*********init an RoutesMiddleware************
+-----------------Router init finish
+-----------------Router test call finish
 
-2nd input
+++++++++++++++++++++++++++++++++++++++++++++
+
 Wsgify __get__
-instance is Application <__main__.Application object at 0x0000000002BCD7B8>
-owner is type Application
-<function __call__ at 0x0000000002BD5048> <bound method Application.__call__ of <__main__.Application object at 0x0000000002BCD7B8>> <bound method Application.__call__ of <__main__.Application object at 0x0000000002BCD7B8>>
+instance is Router <__main__.Router object at 0x0000000002A09AC8>
+owner is type Router
+<function __call__ at 0x0000000002A10198> <bound method Router.__call__ of <__main__.Router object at 0x0000000002A09AC8>> <bound method Router.__call__ of <__main__.Router object at 0x0000000002A09AC8>>
 function instancemethod
+
+clone Wsgify intance with is function  __call__
 ~~~~~~~~~~~~~~Wsgify init
-init func not none, func is  <bound method Application.__call__ of <__main__.Application object at 0x0000000002BCD7B8>>
+init func not none, func is  <bound method Router.__call__ of <__main__.Router object at 0x0000000002A09AC8>>
 ~~~~~~~~~~~~~~Wsgify init finsh
-Wsgify __call__ func not none, req is  test input2
-app call test input2
+
+Wsgify __call__ self.func is __call__ with req: {'name': '1st input'} args: wtf
+===============before return route ===================
+RoutesMiddleware call <class '__main__.Wsgify'> {'name': '1st input'} wtf
+Wsgify __call__ self.func is _dispatch with req: {'name': '1st input'} args: wtf
+_dispatch!!!!!!!!!!!! to contoler
+contoler says {'name': '1st input'} wtf
+contoler out withwtf
+
+++++++++++++++++++++++++++++++++++++++++++++
+
+Wsgify __get__
+instance is Router <__main__.Router object at 0x0000000002A09AC8>
+owner is type Router
+<function __call__ at 0x0000000002A10198> <bound method Router.__call__ of <__main__.Router object at 0x0000000002A09AC8>> <bound method Router.__call__ of <__main__.Router object at 0x0000000002A09AC8>>
+function instancemethod
+
+clone Wsgify intance with is function  __call__
+~~~~~~~~~~~~~~Wsgify init
+init func not none, func is  <bound method Router.__call__ of <__main__.Router object at 0x0000000002A09AC8>>
+~~~~~~~~~~~~~~Wsgify init finsh
+
+Wsgify __call__ self.func is __call__ with req: {'name': '2nd input'} args: fuck!!!
+===============before return route ===================
+RoutesMiddleware call <class '__main__.Wsgify'> {'name': '2nd input'} fuck!!!
+Wsgify __call__ self.func is _dispatch with req: {'name': '2nd input'} args: fuck!!!
+_dispatch!!!!!!!!!!!! to contoler
+contoler says {'name': '2nd input'} fuck!!!
+contoler out withfuck!!!
 ```
 
-我们现在来分析,在一开始,Application的__call__经的装饰过程为Wsgify(__call__),__call__ 变成了而是<class '__main__.Wsgify'>。
+我们现在来分析,在一开始,Router的__call__经的装饰过程为Wsgify(__call__),__call__ 变成了而是<class '__main__.Wsgify'>
 
-Wsgify的实例是一个描述器
+同样的行为作用在_dispatch上
+
 
 我们注意下打印的第二行。
 
     init func not none, func is  <function __call__ at 0x0000000002BD5048>
     说明在类初始化的时候,传给Wsgify.__init__()的func是function,而不是unboundmethod！！也就是说丢失了self....
-    Wsgify.__get__()中的函数就是为了把传入的Application的__call__还原为method
+    Wsgify.__get__()中的函数就是为了把传入的Router的__call__还原为method
+    staticmethod的作用是把_dispatch当成外部函数不是类中的函数,可以理解为如下写法
 
-这样后面实例a调用__call__的实际过程为
+```python
+def out_function:
+    ...
+
+class Router(object):
+
+    @Wsgify
+    def __call__(req):
+        ...
+    # 用staticmethod只为了简化写法
+    _dispatch = Wsgify(out_function)
+
+```
+
+因为__call__属性是描述器,所以这样后面实例a调用__call__的实际过程为
 
 ```python
     type(a).__dict__['__call__'].__get__(a, type(a))
-```    
+```
+
+所以当我们当我们调用
+
+```python
+x = a({'name': '1st input'}, 'wtf')
+# 也就是
+x = a.__call__({'name': '1st input'}, 'wtf')
+# 由于Router.__call__是描述器, 那么a.__call__就是
+a.__call__ === type(a).__dict__['__call__'].__get__(a, type(a))
+# 也就是说完整的函数call为
+type(a).__dict__['__call__'].__get__(a, type(a))({'name': '1st input'}, 'wtf')
+
+```
+
+可以看见我们的输出为
+
+```text
+Wsgify __get__          # 描述器Wsgify的里的get
+instance is Router <__main__.Router object at 0x0000000002A09AC8>   # __get__传入的第一个参数
+owner is type Router   # 传入的第二个参数
+# 这里就是把function转换回method
+<function __call__ at 0x0000000002A10198> <bound method Router.__call__ of <__main__.Router object at 0x0000000002A09AC8>> <bound method Router.__call__ of <__main__.Router object at 0x0000000002A09AC8>>
+function instancemethod
+
+
+clone Wsgify intance with is function  __call__   # 描述器Wsgify调用clone生成一个新的实例,这时候传入的func是instancemethod了
+~~~~~~~~~~~~~~Wsgify init
+init func not none, func is  <bound method Router.__call__ of <__main__.Router object at 0x0000000002A09AC8>>
+~~~~~~~~~~~~~~Wsgify init finsh
+
+retrun clone <__main__.Wsgify object at 0x0000000002869B38>     # 这里就把刚才克隆好的自己返回
+
+```
+
+也就是说,实际的a({'name': '1st input'}, 'wtf')为
+
+    "clone <__main__.Wsgify object at 0x0000000002869B38>".__call__({'name': '1st input'}, 'wtf')
+
+也就是说到现在还没有用到Router原来的call,那么我们来看看最后怎么进去的
+
+```text
+Wsgify __call__ self.func is __call__ with req: {'name': '1st input'} args: wtf     # Wsgify.__call__调用了 self.func.__call__, 这
+===============before return route ===================  # 终于用到了Router原来的call
+RoutesMiddleware call <class '__main__.Wsgify'> {'name': '1st input'} wtf    # RoutesMiddleware的__call__
+Wsgify __call__ self.func is _dispatch with req: {'name': '1st input'} args: wtf  # 这个Wsgify是_dispatch的描述器, _dispatch是function,没有走__get__, 直接走了Wsgify __call__
+_dispatch!!!!!!!!!!!! to contoler  # Wsgify __call__调用了_dispatch(当参数是dict的时候), _dispatch返回了一个一个函数contoler
+contoler says {'name': '1st input'} wtf # 函数contoler 被调用
+contoler out withwtf # 函数contoler 返回
+```
+
+function的描述起没有走\__get__这个点是个疑惑
+
+```python
+def pp(a):
+    print a
+print pp.__call__
+pp('x')
+pp.__call__('y')
+```
+
+输出为
+
+```text
+<method-wrapper '__call__' of function object at 0x0000000002910EB8>
+x
+y
+```
+
+这个疑惑我暂时没搜到信息,我们暂时抛开这个疑惑,解决几个问题
+
+1. openstack中@webob.dec.wsgify(RequestClass=Request)是怎么工作的
+2. RoutesMiddleware是干什么的
+3. \_dispatch 是干什么的
+4. 请求是怎么分发到openstack的各个contoler上的
+
+#### 第一个问题好办
+
+```python
+
+    @Wsgify
+    # 根据装饰器的原理,装饰__call__过程为
+    Wsgify(__call__)
+    # 改为
+    @Wsgify(loli='xxx')
+    # 根据装饰器的原理,装饰__call__过程为
+    @Wsgify(loli='xxx')(__call__)
+    # 这样就走到了Wsgify的__call__中
+    def __call__(self, req,  *args, **kwargs):
+        func = self.func
+        if func is None:
+            print 'Wsgify __call__ self.func none, clone func'
+            func = req
+            # 将func传入再克隆自身
+            # 这样就达到给Wsgify传其他参数的目的了
+            return self.clone(func)
+```
+
+
+#### 第二个问题, 原始RoutesMiddleware的\__init__为
+
+```python
+class RoutesMiddleware(object):
+
+    def __init__(self, wsgi_app, mapper, use_method_override=True,
+                 path_info=True, singleton=True):
+        # 这个就是传入的 描述器描述过的function _dispatch
+        self.app = wsgi_app
+        # 这个mapper就是真正的route,不是我们前面的Route类,是通用route模块
+        self.mapper = mapper
+        ...
+```
+
+    可以看出RoutesMiddleware是用来封装实际的route(传入的mapper就是route类的实例)模块的类
+    它只在Router初始化的时候创建一个实例。
+    RoutesMiddleware的__call__获取http数据,然后调用route分发到contoler
+
+#### 第三个、第四个问题是一起的
+
+    前面不是说分发由RoutesMiddleware做么?
+    我们来看看RoutesMiddleware.__call__ 和_dispatch中的具体原始代码
+
+```python
+
+class RoutesMiddleware(object):
+    ...
+
+    def __call__(self, environ, start_response):
+        ...
+
+        match, route = self.mapper.routematch(environ=environ)
+        # 设置 routing_args
+        environ['wsgiorg.routing_args'] = ((url), match)
+        environ['routes.route'] = route
+        environ['routes.url'] = url
+        # _dispatch中隐射的controller
+        # 这里看出controller能call able,也能接收environ, start_response
+        # 也就是说所有controller都是wsgi的app
+        response = self.app(environ, start_response)
+        ...
+
+
+class Router(object):
+    ....
+
+    @staticmethod
+    @webob.dec.wsgify(RequestClass=Request)
+    def _dispatch(req):
+        # 取出前面设置的routing_args
+        match = req.environ['wsgiorg.routing_args'][1]
+        if not match:
+            return webob.exc.HTTPNotFound()
+        # 映射到controller
+        app = match['controller']
+        return app
+```
+
+    看见了把, RoutesMiddleware通过mapper生成match, match塞入environ
+    _dispatch 从match中取出match, 然后返回app
+    这个app就是对应的controller,也就说所有的controller也都是wsgi  app
+    这里可以看出其实代码可以写得不需要一个 _dispatch
+    _dispatch放在外面是为了方便继承重写,修改重定向controller
+    __
+
+我们拿osapi_compute_app_legacy_v2来看看mapper如何映射到Controller
+
+```python
+# api-paste.ini中osapi_compute_app_legacy_v2指向的class
+class APIRouter(nova.api.openstack.APIRouter):
+    ...
+
+    def _setup_routes(self, mapper, ext_mgr, init_only):
+        if init_only is None or 'versions' in init_only:
+            self.resources['versions'] = legacy_v2_versions.create_resource()
+            mapper.connect("versions", "/",
+                        # 所以具体的controller就是legacy_v2_versions.create_resource()
+                        controller=self.resources['versions'],
+                        action='show',
+                        conditions={"method": ['GET']})
+```
+
+```python
+# 找到nova.api.openstack.APIRouter中
+import routes
+class APIMapper(routes.Mapper):
+    def routematch(self, url=None, environ=None):
+        ...
+
+    def connect(self, *args, **kargs):
+        ...
+
+class ProjectMapper(APIMapper):
+    def resource(self, member_name, collection_name, **kwargs):
+        ...
+
+# nova.api.openstack.APIRouter
+class APIRouter(base_wsgi.Router):  # base_wsgi.Router就是我们前面实例的Router
+    @classmethod
+    def factory(cls, global_config, **local_config):
+        """Simple paste factory, :class:`nova.wsgi.Router` doesn't have one."""
+        return cls()
+
+    def __init__(self, ext_mgr=None, init_only=None):
+        ...
+        mapper = ProjectMapper()
+        self.resources = {}
+        # 这里设置路由,看前面
+        self._setup_routes(mapper, ext_mgr, init_only)
+```
+
+```python
+# 我们从_setup_routes随便找一个mapper.connect看看
+# legacy_v2_versions.create_resource()
+
+def create_resource():
+    return wsgi.Resource(Controller())
+
+# wsgi.Resource
+class Resource(wsgi.Application):
+    .....
+    # 这里可以证实了所有的Controller都是 wsgi app
+    @webob.dec.wsgify(RequestClass=Request)
+    def __call__(self, request)
+       ....
+```

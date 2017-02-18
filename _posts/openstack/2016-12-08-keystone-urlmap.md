@@ -126,7 +126,7 @@ install -D -m 644 MANIFEST.in %{buildroot}%{_docdir}/%{name}-%{version}
 ---
     loadserver
     配置中的server:都由他处理,openstack的各个服务没有用它来管理自己的wsig,都是自己管理
-    keystone可以之际uwsig来启动
+    keystone甚至可以用uwsig来运行,配合nginx、apache
 ---
 
 我们现在来看启动过程,
@@ -176,8 +176,13 @@ def loadapp(conf, name):
     eventlet的封装里初始化了全局变量, 不存在因为全局变量问题必须多进程.
     public 和admin的 worker count可以多进程也可以单进程
 
-主进程在调用launch_service之前（最终fork之前）先调用了listen,
-fork后通过self.launcher = self._child_process(wrap.service)下的launcher.launch_service(service)启动循环.
+keyston主进程在调用launch_service之前（最终fork之前）先调用了listen,fork后通过
+
+```python
+    self.launcher = self._child_process(wrap.service)
+```
+
+下的launcher.launch_service(service)启动循环.
 socket数据接收直接在各个子进程 通过dup_socket = self.socket.dup() 复制出来的socket accept(看下面的说明来理解多进程接受数据).
 socket如何接受数据 处理分包粘包都是在eventlet.wsgi的代码中
 对于监听一个socket来说，多个进程同时在accept处阻塞，当有一个连接进入，多个进程同时被唤醒，但之间只有一个进程能成功accept，而不会同时有多个进程能拿到该连接对象，操作系统保证了进程操作这个连接的安全性。
@@ -222,7 +227,8 @@ def _loadconfig(object_type, uri, path, name, relative_to,
     get_context会通过传入的name和APP类的config_prefixes获取到section([composite:main])的内容并放入local_conf变量中
     当section是pipeline或者local_conf中有"use"这个key的时候,有对应递归（看这里大致明白pipeline是怎么一级一级的调用filter了）,
     由于local_conf的key里有"use"(use = egg:Paste#urlmap),调用_context_from_use
-    _context_from_use内部local_conf.pop弹出use对应values作为name(这次name为egg:Paste#urlmap)再调用get_context
+    _context_from_use 内部local_conf.pop弹出use对应values作为name(这次name为egg:Paste#urlmap)再调用get_context
+    __
 
 这次又走到了loadcontext中实际函数为
 
@@ -254,6 +260,7 @@ urlmap = paste.urlmap.urlmap_factory
     但是_context_from_use返回前把LoaderContext的loader覆盖为self,也就是ConfigLoader
     _context_from_use在返回LoaderContext之前还处理了下LoaderContext中的protocol
     后面的处理应该是为了pipeline做的
+    __
 
 再回到前面的loadobj,这时候最后的create则是LoaderContext中的
 ```python
@@ -311,6 +318,7 @@ def urlmap_factory(loader, global_conf, **local_conf):
     /v2.0 = public_api
     /v3 = api_v3
     / = public_version_api
+
 通过ConfigLoader的get_app(注意前面红字部分),完成url的与调用app的map映射(字典)
 到这里,path匹配到对应的处理方法完成
 urlmap key对应的value作为wsgi的app, 接收wsgi传入的数据
@@ -318,23 +326,122 @@ app的具体初始化过程[参考](http://blog.chinaunix.net/uid-23504396-id-57
 
 
 后面就是通过绿色线程(eventlet.wsgi.server)处理监听端口过来的数据
-以key(url path)   values(对应的映射方法)形式分发传入的数据到不同的app进行处理
 
+然后会以key(url path) values(对应的映射方法)找到具体的openstack的app line (pipe, 也就是一串过滤器加最终的app)
+
+最后wsig会以key(url path) values(对应的映射方法)找到具体的openstack的app line (pipe, 也就是一串过滤器加最终的app)
+
+```python
+# tcp server,  处理socket来的数据
+class Server(BaseHTTPServer.HTTPServer):
+
+    def process_request(self, sock_params):
+        sock, address = sock_params
+        proto = new(self.protocol)
+        if self.minimum_chunk_size is not None:
+            proto.minimum_chunk_size = self.minimum_chunk_size
+        proto.capitalize_response_headers = self.capitalize_response_headers
+        try:
+            proto.__init__(sock, address, self)
+        except socket.timeout:
+            # Expected exceptions are not exceptional
+            sock.close()
+            # similar to logging "accepted" in server()
+            self.log.debug('(%s) timed out %r' % (self.pid, address))
+
+
+# http协议包处理,就是上面的proto.__init__(sock, address, self)
+class HttpProtocol(BaseHTTPServer.BaseHTTPRequestHandler):
+
+    def __init__(self, request, client_address, server):
+        self.request = request
+        self.client_address = client_address
+        self.server = server
+        # setup把socket的数据传入管道文件rfile
+        # 具体代码在BaseHTTPRequestHandler类中
+        self.setup()
+        try:
+            self.handle()
+        finally:
+            self.finish()
+
+    def handle(self):
+        self.close_connection = 1
+        self.handle_one_request()
+        while not self.close_connection:
+            self.handle_one_request()
+
+    def handle_one_request(self):
+        # 从读管道rfile里读, 读取的第一行是url
+        self.raw_requestline = self.rfile.readline(self.server.url_length_limit)
+        # 这里是读出socket里的内容,生成environ
+        if not self.parse_request():
+            return
+        ...
+        self.environ = self.get_environ()
+        # 这里application是一个URLMap类
+        # 也就是load_app所返回的所有对应openstack的app line组成的字典
+        self.application = self.server.app
+        try:
+            self.server.outstanding_requests += 1
+            try:
+                self.handle_one_response()
+            except socket.error as e:
+                # Broken pipe, connection reset by peer
+                if support.get_errno(e) not in BROKEN_SOCK:
+                    raise
+        finally:
+            self.server.outstanding_requests -= 1
+
+    def handle_one_response(self):
+        ...
+        # 这里是的application就是一个前面的URLMap类实例
+        # start_response用于回发数据
+        result = self.application(self.environ, start_response)
+
+# URLMap类大致代码
+
+class URLMap(paste.urlmap.URLMap):
+    ...
+    def __call__(self, environ, start_response):
+        host = environ.get('HTTP_HOST', environ.get('SERVER_NAME')).lower()
+        if ':' in host:
+            host, port = host.split(':', 1)
+        else:
+            if environ['wsgi.url_scheme'] == 'http':
+                port = '80'
+            else:
+                port = '443'
+        # 从environ中获取到path信息
+        path_info = environ['PATH_INFO']
+        path_info = self.normalize_url(path_info, False)[1]
+        # path映射到openstack的具体app line
+        mime_type, app, app_url = self._path_strategy(host, port, path_info)
+
+```
 
 顺便,在nova-api中,配置文件是这样的
+
 ```config_file
 [app:metaapp]
 paste.app_factory = nova.api.metadata.handler:MetadataRequestHandler.factory
 ```
+
 匹配会走到
+
+```python
     _context_from_explicit
+```
+
 这样就可以不绕egg找一圈直匹配到对应的类了
 
 至于为什么keystone里用use = egg
+
 ```config_file
 [app:service_v3]
 use = egg:keystone#service_v3
 ```
+
 而nova-api里用比较直接的方式引过去,我反正是不打算纠结了,知道怎么映射过去的就差不多.
 
 这里也可以看出openstack的代码风格也不怎么统一
