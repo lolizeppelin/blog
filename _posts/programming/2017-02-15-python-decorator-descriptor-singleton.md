@@ -703,7 +703,7 @@ contoler says {'name': '1st input'} wtf # 函数contoler 被调用
 contoler out withwtf # 函数contoler 返回
 ```
 
-function的描述起没有走\__get__这个点是个疑惑
+function的描述器没有走\__get__这个点是个疑惑
 
 ```python
 def pp(a):
@@ -747,6 +747,7 @@ y
             func = req
             # 将func传入再克隆自身
             # 这样就达到给Wsgify传其他参数的目的了
+            # 稍微多套了一层而已
             return self.clone(func)
 ```
 
@@ -760,12 +761,13 @@ class RoutesMiddleware(object):
                  path_info=True, singleton=True):
         # 这个就是传入的 描述器描述过的function _dispatch
         self.app = wsgi_app
-        # 这个mapper就是真正的route,不是我们前面的Route类,是通用route模块
+        # 这个mapper就是真正的route,不是我们前面的Route类
+        # 是python通用route模块的routes.Mapper类实例
         self.mapper = mapper
         ...
 ```
 
-    可以看出RoutesMiddleware是用来封装实际的route(传入的mapper就是route类的实例)模块的类
+    可以看出RoutesMiddleware是用来封装实际的route(传入的mapper就是routes.Mapper类)
     它只在Router初始化的时候创建一个实例。
     RoutesMiddleware的__call__获取http数据,然后调用route分发到contoler
 
