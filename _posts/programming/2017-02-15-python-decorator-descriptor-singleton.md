@@ -819,7 +819,7 @@ class Router(object):
     把_dispatch放在外面是为了方便继承重写,修改重定向controller
     顺便,可以看出controller也是一个wsgi app
 
-我们拿osapi_compute_app_legacy_v2来看看mapper如何映射到Controller
+我们拿osapi_compute_app_legacy_v2来看看mapper如何映射到Controller,同时确认Controller是wsgi app
 
 ```python
 # api-paste.ini中osapi_compute_app_legacy_v2指向的class
