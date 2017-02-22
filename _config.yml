@@ -27,8 +27,8 @@ FB:
   comments :
     provider : duoshuo
     duoshuo:
-        short_name : lolizepelin
+        short_name : lolizeppelin
     disqus :
-        short_name : lolizepelin
+        short_name : lolizeppelin
 
 gems: [jekyll-paginate]
