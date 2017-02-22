@@ -25,7 +25,7 @@ markdown: kramdown
 
 FB:
   comments :
-    provider : lolizepelin
+    provider : duoshuo
     duoshuo:
         short_name : lolizepelin
     disqus :

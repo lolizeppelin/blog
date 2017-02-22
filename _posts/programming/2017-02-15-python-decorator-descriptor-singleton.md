@@ -698,7 +698,7 @@ retrun clone <__main__.Wsgify object at 0x0000000002869B38>     # 这里就把�
 Wsgify __call__ self.func is __call__ with req: {'name': '1st input'} args: wtf     # Wsgify.__call__调用了 self.func.__call__, 这
 ===============before return route ===================  # 终于用到了Router原来的call
 RoutesMiddleware call <class '__main__.Wsgify'> {'name': '1st input'} wtf    # RoutesMiddleware的__call__
-Wsgify __call__ self.func is _dispatch with req: {'name': '1st input'} args: wtf  # 这个Wsgify是_dispatch的描述器, _dispatch是function,没有走__get__, 直接走了Wsgify __call__
+Wsgify __call__ self.func is _dispatch with req: {'name': '1st input'} args: wtf  # _dispatch是外部function,Wsgify描述器无效,不走__get___,下面有解释
 _dispatch!!!!!!!!!!!! to contoler  # Wsgify __call__调用了_dispatch(当参数是dict的时候), _dispatch返回了一个一个函数contoler
 contoler says {'name': '1st input'} wtf # 函数contoler 被调用
 contoler out withwtf # 函数contoler 返回
@@ -709,20 +709,67 @@ function的描述器没有走\__get__这个点是个疑惑
 ```python
 def pp(a):
     print a
-print pp.__call__
-pp('x')
-pp.__call__('y')
+
+class WP(object):
+
+    def __init__(self):
+        pass
+
+    function = pp
+
+    @staticmethod
+    def ppp(a):
+        print a
+
+
+print WP.ppp
+print WP.function, id(WP.function)
+print pp, id(pp)
+a = WP()
+a.function()
+try:
+    a.function('a')
+except Exception, e:
+    print e
+gg = a.ppp.__get__(a, type(a))
+print gg
+try:
+    print gg('lalala')
+except Exception,e:
+    print e
+gg()
+
 ```
 
 输出为
 
 ```text
-<method-wrapper '__call__' of function object at 0x0000000002910EB8>
-x
-y
+<function ppp at 0x0000000002A68EB8>
+<unbound method WP.pp> 42723080  # pp被复制了, 不再是原来的pp,唯一的参数相当于self
+<function pp at 0x0000000002930EB8> 43191992
+<__main__.WP object at 0x0000000002A9D6D8>
+pp() takes exactly 1 argument (2 given)
+<bound method WP.ppp of <__main__.WP object at 0x0000000002A9D6D8>>
+ppp() takes exactly 1 argument (2 given)
+<__main__.WP object at 0x0000000002A9D6D8>
 ```
 
-这个疑惑我暂时没搜到信息,我们暂时抛开这个疑惑,解决几个问题
+结论
+
+    当类的属性是一个staticmethod修饰的,也就是外部function的时候
+    Wsgify(_dispatch)被看作为普通实例,__get__ 方法不被调用
+    那么
+
+```python
+# 函数调用
+_dispatch(req)
+# 相当于调用
+Wsgify(_dispatch)(req)
+# 也就是
+Wsgify.__call__(req)
+```
+
+接下来我们解决具体的openstack中代码的问题
 
 1. openstack中@webob.dec.wsgify(RequestClass=Request)是怎么工作的
 2. RoutesMiddleware是干什么的
