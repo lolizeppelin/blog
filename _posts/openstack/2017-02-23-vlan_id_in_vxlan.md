@@ -49,7 +49,7 @@ A机和B机器对同一个vxlan id(tun_id)打上的vlan id不一样！难道是T
 
 ![](/styles/images/vxlan_without_vlan.png)
 
-卧槽....出去的vxlan包根本没有vlan标记...
+卧槽....看见了么,出去的vxlan包根本没有vlan标记...是0x0800
 
 # 也就是说所有文章介绍vxlan的时候都给vxlan包加上vlan标签是个很大的误导
 
