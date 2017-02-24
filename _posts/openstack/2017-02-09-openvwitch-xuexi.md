@@ -237,7 +237,9 @@ OpenvSwitch的组成[参考](http://blog.csdn.net/lizheng2300/article/details/54
     table=22, priority=0 actions=drop                                      未匹配丢弃包
     ===============================================================================================================================================================
 
+tunnel就是vxlan的id
 
+流表中的actions=mod_vlan_vid:1和actions=strip_vlan在干什么[参考](http://www.lolizeppelin.com/2017/02/23/vlan_id_in_vxlan/)
 
 
 ## 现在我们来揭示上面的配置错误！

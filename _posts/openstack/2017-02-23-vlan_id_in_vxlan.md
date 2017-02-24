@@ -108,3 +108,7 @@ sdn中这种非原生的vxlan实现方式最大的优点就是不用大量修改
 看到这里,上面所有的疑问都可以解决了。
 
 至于vxlan和vlan网络混用,那是要支持vxlan的设备做网关的事情,就不是这里的讨论范围了
+
+### 顺便,网上说的vxlan隔离租户的说法是错误的,这种说法已经过时了。现在openstack每创建一个network就会分配一个vxlan id
+
+### 所以隔离的单位是network而是租户、project、domain
