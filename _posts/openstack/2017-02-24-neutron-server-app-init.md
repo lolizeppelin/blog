@@ -14,10 +14,7 @@ tag: ["openstack", "python"]
 
 
 ```python
-RESOURCES = {'network': 'networks',
-             'subnet': 'subnets',
-             'subnetpool': 'subnetpools',
-             'port': 'ports'}
+
 
 class APIRouter(base_wsgi.Router):
     def __init__(self, **local_config):
