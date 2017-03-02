@@ -99,3 +99,6 @@ class IpamNonPluggableBackend(ipam_backend_mixin.IpamBackendMixin):
          return IpamNonPluggableBackend._try_generate_ip(context, subnets)
 
 ```
+
+[上一篇](http://www.lolizeppelin.com/2016/12/14/neutron-server-create-port/)neutron创建port的过程
+[下一篇](http://www.lolizeppelin.com/2016/12/14/neutron-server-create-port/)还没有写

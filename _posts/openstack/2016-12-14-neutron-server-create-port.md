@@ -267,7 +267,7 @@ class Ml2Plugin(db_base_plugin_v2.NeutronDbPluginV2,
     def create_port_db(self, context, port):
         # 这里可以看,create_port_db和_create_port_db不是一个人写的
         # _create_port_db用的是attrs = port[attributes.PORT]
-        # 这里用的是p = port['port']
+        # 这里用的是p = port['port'],直接用port字符串的应该是老一点的代码
         # 这里的p就是传进来的body
         p = port['port']
         port_id = p.get('id') or uuidutils.generate_uuid()
@@ -278,7 +278,7 @@ class Ml2Plugin(db_base_plugin_v2.NeutronDbPluginV2,
         if p.get('device_owner'):
             self._enforce_device_owner_not_router_intf_or_device_id(
                 context, p.get('device_owner'), p.get('device_id'), tenant_id)
-
+        # 这里看到port_data字典里没有fixed_ips字段
         port_data = dict(tenant_id=tenant_id,
                          name=p['name'],
                          id=port_id,
@@ -292,17 +292,15 @@ class Ml2Plugin(db_base_plugin_v2.NeutronDbPluginV2,
             'dns_name' in p):
             request_dns_name = self._get_request_dns_name(p)
             port_data['dns_name'] = request_dns_name
-
         with context.session.begin(subtransactions=True):
             # Ensure that the network exists.
             # 通过network_id查找network来确认network存在
             self._get_network(context, network_id)
-
             # Create the port
-            # 通过port_data创建端口
-            # port_data中只有network_id没有fixed_ips
+            # 通过port_data字典创建端口
+            # 前面看到port_data中只有network_id没有fixed_ips
             if p['mac_address'] is attributes.ATTR_NOT_SPECIFIED:
-                # crate_port最终会调用_create_port_with_mac
+                # crate_port最终会调用_create_port_with_mac,之前先做mac随机生成
                 db_port = self._create_port(context, network_id, port_data)
                 p['mac_address'] = db_port['mac_address']
             else:
@@ -310,11 +308,11 @@ class Ml2Plugin(db_base_plugin_v2.NeutronDbPluginV2,
                 # 这个实例目前的fixed_ips是空列表
                 db_port = self._create_port_with_mac(
                     context, network_id, port_data, p['mac_address'])
-            # 这里ips结构为, ipv4只返回第一个找到的有可用ip的子网
+            # 这里ips结构为,具体分配过程看另外下一篇
             # [{'subnet_id': u'1cabecae-d7c8-4a25-b2a1-758df2619667',
             #   'ip_address': u'192.168.1.43'}]
             # 也就是说到这一步才分配到了ip
-            # 问题在于,先连表(join)再创建的原理  得看sqlalchemy的orm部分代码才懂
+            # 问题在于,是先连表(join)再创建 具体实现得看sqlalchemy的orm部分代码才懂
             # 总之,ips是allocate_ips_for_port_and_store创建的
             # ipam就是 neutron.db.ipam_pluggable_backend.IpamPluggableBackend
             ips = self.ipam.allocate_ips_for_port_and_store(context, port,
@@ -328,18 +326,18 @@ class Ml2Plugin(db_base_plugin_v2.NeutronDbPluginV2,
                 db_port['dns_assignment'] = dns_assignment
         # db_port是一个neutron.db.models_v2.Port实例,
         # 对应到数据库的ports表
-        # 实例默认的 fixed_ips属性是 port表 以port_id
-        # join ipallocations表获得的列表
-        # 我们port所用的ip信息就在ipallocations表中
+        # 实例默认的 fixed_ips属性是
+        # port表以port_id为关联键 join ipallocations表获得的列表
+        # 我们port所用的ip信息存放在ipallocations表中
         return db_port
-
 
     def _create_port_db(self, context, port):
         # 这里的attrs就是传进来的body
+        # 这里用attributes.PORT来代替字符串port
+        # 这部份应该是新代码,直接用port字符串的应该是旧代码
         attrs = port[attributes.PORT]
         if not attrs.get('status'):
             attrs['status'] = const.PORT_STATUS_DOWN
-
         session = context.session
         with db_api.exc_to_retry(os_db_exception.DBDuplicateEntry),\
                 session.begin(subtransactions=True):
@@ -347,6 +345,7 @@ class Ml2Plugin(db_base_plugin_v2.NeutronDbPluginV2,
             # body字典中的内容转换为
             # neutron.db.models_v2.Port实例
             # port_db的fixed_ips属性就是我们创建port后分配到ip列表
+            # 我们再往上看create_port_db
             port_db = self.create_port_db(context, port)
             # Port实例转成dict
             result = self._make_port_dict(port_db, process_extensions=False)
@@ -379,6 +378,7 @@ class Ml2Plugin(db_base_plugin_v2.NeutronDbPluginV2,
         with lockutils.lock(port['port']['network_id'],
                             lock_file_prefix='neutron-create-port',
                             external=True):
+            # 往上面看_create_port_db
             result, mech_context = self._create_port_db(context, port)
         # notify any plugin that is interested in port create events
         kwargs = {'context': context, 'port': result}
@@ -417,3 +417,6 @@ class Ml2Plugin(db_base_plugin_v2.NeutronDbPluginV2,
 ```
 
 接下来的IP分配参考nova通过neutron分配网络的过程(3)
+
+[上一篇](http://www.lolizeppelin.com/2016/12/14/nova-allocate-network/)nova创建网络
+[下一篇](http://www.lolizeppelin.com/2017/02/27/neutron-allocate_ips_for_port/)neutron为port分配ip

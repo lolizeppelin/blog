@@ -9,7 +9,9 @@ tag: ["openstack", "linux"]
 * content
 {:toc}
 
-linux镜像的制作过程参考了[这篇](http://blog.csdn.net/xiegh2014/article/details/53248403)文章
+最近才发现之前一直用的镜像是lvm的不支持rezise,没办法还得自己做,搞个openstack真TM什么都要自己来
+
+linux镜像的制作过程参考[这篇](http://blog.csdn.net/xiegh2014/article/details/53248403)文章
 
 以下操作在openstack已经搭建完成的情况下操作的,没搭建好的更加简单,直接virsh环境里就能处理了
 

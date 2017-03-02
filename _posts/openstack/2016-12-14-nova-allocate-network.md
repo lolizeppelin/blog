@@ -435,3 +435,5 @@ def spawn(self, context, instance, image_meta, injected_files,
     timer = loopingcall.FixedIntervalLoopingCall(_wait_for_boot)
     timer.start(interval=0.5).wait()
 ```
+
+[下一篇](http://www.lolizeppelin.com/2016/12/14/neutron-server-create-port/)neutron创建port的过程
