@@ -10,7 +10,7 @@ tag: ["openstack", "python"]
 {:toc}
 
 
-neutron ml(openvswitch) agent分配创建br
+neutron ml(openvswitch) agent初始化并创建br的过程
 
     文件neutron.plugins.ml2.drivers.openvswitch.agent.ovs_neutron_agent.py
 
