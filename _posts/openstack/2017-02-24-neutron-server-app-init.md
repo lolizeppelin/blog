@@ -25,13 +25,7 @@ class APIRouter(base_wsgi.Router):
 
         col_kwargs = dict(collection_actions=COLLECTION_ACTIONS,
                           member_actions=MEMBER_ACTIONS)
-
-        def _map_resource(collection, resource, params, parent=None):
-            controller = base.create_resource(
-                collection, resource, plugin, params, allow_bulk=allow_bulk,
-                parent=parent, allow_pagination=allow_pagination,
-                allow_sorting=allow_sorting)
-            path_prefix = None
+                          
             # 没有设置parent,不传入path_prefix会有默认path_prefix
             if parent:
                 path_prefix = "/%s/{%s_id}/%s" % (parent['collection_name'],
