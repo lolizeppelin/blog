@@ -31,5 +31,13 @@ class APIRouter(base_wsgi.Router):
                           member_actions=MEMBER_ACTIONS)
 
         def _map_resource(collection, resource, params, parent=None):
+            allow_bulk = cfg.CONF.allow_bulk
+            allow_pagination = cfg.CONF.allow_pagination
+            allow_sorting = cfg.CONF.allow_sorting
+            # 看后面的create_resource代码部分说明
+            controller = base.create_resource(
+                collection, resource, plugin, params, allow_bulk=allow_bulk,
+                parent=parent, allow_pagination=allow_pagination,
+                allow_sorting=allow_sorting)
 
 ```
