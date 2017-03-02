@@ -15,6 +15,13 @@ tag: ["openstack", "python"]
 
 ```python
 
+# neutron.api.v2.router.py
+# resource和collection 名的映射字典
+RESOURCES = {'network': 'networks',
+             'subnet': 'subnets',
+             'subnetpool': 'subnetpools',
+             'port': 'ports'}
+
 class APIRouter(base_wsgi.Router):
 
     def __init__(self, **local_config):
