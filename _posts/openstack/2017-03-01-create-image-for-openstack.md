@@ -9,12 +9,11 @@ tag: ["openstack", "linux"]
 * content
 {:toc}
 
+linux镜像的制作过程参考了[这篇](http://blog.csdn.net/xiegh2014/article/details/53248403)文章
 
 以下操作在openstack已经搭建完成的情况下操作的,没搭建好的更加简单,直接virsh环境里就能处理了
 
 ---
-
-linux镜像的制作过程参考了[这篇](http://blog.csdn.net/xiegh2014/article/details/53248403)文章
 
 #### 宿主机中操作
 
@@ -27,9 +26,9 @@ linux镜像的制作过程参考了[这篇](http://blog.csdn.net/xiegh2014/artic
 
 ```shell
 mkdir /data/tmp
-# 系统分区
+# 系统硬盘
 qemu-img create -f qcow2 centos-6.8.qcow2 5G
-# swap分区,不然安装的时候会卡在selinux安装
+# swap分区专用硬盘,不然安装的时候会卡在selinux安装
 qemu-img create -f raw swap.raw 4G
 # 修改文件权限
 chmod 777 /data/tmp/*
