@@ -14,9 +14,6 @@ tag: ["openstack", "python"]
 
 
 ```python
-
-# neutron.api.v2.router.py
-# resource和collection 名的映射字典
 RESOURCES = {'network': 'networks',
              'subnet': 'subnets',
              'subnetpool': 'subnetpools',
@@ -25,10 +22,6 @@ RESOURCES = {'network': 'networks',
 class APIRouter(base_wsgi.Router):
     def __init__(self, **local_config):
         mapper = routes_mapper.Mapper()
-        # neutron.manager.py
-        # get_plugin()返回的是NeutronManager实例(单例)的属性plugin
-        # 也就是 CORE_PLUGINS
-        # neutron.plugins.ml2.plugin.py中的Ml2Plugin
         plugin = manager.NeutronManager.get_plugin()
         ext_mgr = extensions.PluginAwareExtensionManager.get_instance()
         ext_mgr.extend_resources("2.0", attributes.RESOURCE_ATTRIBUTE_MAP)
