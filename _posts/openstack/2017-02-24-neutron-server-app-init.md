@@ -49,7 +49,5 @@ class APIRouter(base_wsgi.Router):
             path_prefix = None
             # 没有设置parent,不传入path_prefix会有默认path_prefix
             if parent:
-                path_prefix = "/%s/{%s_id}/%s" % (parent['collection_name'],
-                                                  parent['member_name'],
-                                                  collection)
+                path_prefix = xxxx
 ```
