@@ -82,17 +82,3 @@ RESOURCES = {'network': 'networks',
 
 
 在这里创建controller并把controller转化成wsig的app
-
-```python
-
-def create_resource(collection, resource, plugin, params, allow_bulk=False,
-                    member_actions=None, parent=None, allow_pagination=False,
-                    allow_sorting=False):
-    # 这里就是具体的controller,具体的执行代码就在controller中
-    controller = Controller(plugin, collection, resource, params, allow_bulk,
-                            member_actions=member_actions, parent=parent,
-                            allow_pagination=allow_pagination,
-                            allow_sorting=allow_sorting)
-    # 把controller转为wsig的app
-    return wsgi_resource.Resource(controller, FAULT_MAP)
-```
