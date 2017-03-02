@@ -172,6 +172,8 @@ def allocate_for_instance(self, context, instance, **kwargs):
                 ports_in_requested_order.append(port['id'])
             # 申请网络的时候没有port信息,创建port
             else:
+                # neutron如何创建port和port里有什么信息需要看下一篇
+                # 这里需要知道ip是创建port的时候分配的
                 created_port = self._create_port(
                         port_client, instance, request.network_id,
                         port_req_body, request.address,
@@ -336,10 +338,12 @@ get_instance_nw_info过程,这里会详细说明代码
                 if (current_neutron_port['admin_state_up'] is False
                     or current_neutron_port['status'] == 'ACTIVE'):
                     vif_active = True
-                # 通过网络端口获取ip
+                # 通过网络端口(port)获取ip,记住ip是创建port的的时候分配的
+                # ip是关联在port上的
                 network_IPs = self._nw_info_get_ips(client,
                                                     current_neutron_port)
-                # 通过端口获取子网
+                # 通过端口(port)获取子网
+                # 和上面ip原理一样,子网是跟着port的
                 subnets = self._nw_info_get_subnets(context,
                                                     current_neutron_port,
                                                     network_IPs)
@@ -374,8 +378,6 @@ get_instance_nw_info过程,这里会详细说明代码
                          instance=instance)
 
         return nw_info
-
-
 ```
 
 有兴趣也可以看看_process_requested_networks的请求过程,这里就不说明了
