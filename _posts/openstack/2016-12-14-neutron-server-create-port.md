@@ -419,4 +419,5 @@ class Ml2Plugin(db_base_plugin_v2.NeutronDbPluginV2,
 接下来的IP分配参考nova通过neutron分配网络的过程(3)
 
 [上一篇](http://www.lolizeppelin.com/2016/12/14/nova-allocate-network/)nova创建网络
+
 [下一篇](http://www.lolizeppelin.com/2017/02/27/neutron-allocate_ips_for_port/)neutron为port分配ip
