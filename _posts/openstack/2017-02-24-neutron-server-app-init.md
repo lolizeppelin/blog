@@ -59,23 +59,4 @@ class APIRouter(base_wsgi.Router):
             # 映射资源到mapper上
             return mapper.collection(collection, resource,
                                       **mapper_kwargs)
-
-        mapper.connect('index', '/', controller=Index(RESOURCES))
-        # 调用_map_resource注册resource
-        for resource in RESOURCES:
-            # 一个个controller注册进去
-            _map_resource(RESOURCES[resource], resource,
-                          attributes.RESOURCE_ATTRIBUTE_MAP.get(
-                              RESOURCES[resource], dict()))
-            resource_registry.register_resource_by_name(resource)
-
-        # 注册额外的resource
-        for resoue in SUB_RESOURCES:
-            _map_resource(SUB_RESOURCES[resource]['collection_name'], resource,
-                          attributes.RESOURCE_ATTRIBUTE_MAP.get(
-                              SUB_RESOURCES[resource]['collection_name'],
-                              dict()),
-                          SUB_RESOURCES[resource]['parent'])
-        policy.reset()
-        super(APIRouter, self).__init__(mapper)
 ```
