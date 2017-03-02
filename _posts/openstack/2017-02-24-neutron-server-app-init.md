@@ -46,17 +46,4 @@ class APIRouter(base_wsgi.Router):
                 collection, resource, plugin, params, allow_bulk=allow_bulk,
                 parent=parent, allow_pagination=allow_pagination,
                 allow_sorting=allow_sorting)
-            path_prefix = None
-            # 没有设置parent,不传入path_prefix会有默认path_prefix
-            if parent:
-                path_prefix = "/%s/{%s_id}/%s" % (parent['collection_name'],
-                                                  parent['member_name'],
-                                                  collection)
-            mapper_kwargs = dict(controller=controller,
-                                 requirements=REQUIREMENTS,
-                                 path_prefix=path_prefix,
-                                 **col_kwargs)
-            # 映射资源到mapper上
-            return mapper.collection(collection, resource,
-                                      **mapper_kwargs)
 ```
