@@ -3,7 +3,7 @@ layout: post
 title:  "pacemaker的clone配置说明以及RHCS集群故障处理"
 date:   2016-08-16 15:05:00 +0800
 categories: "troubleshooting"
-tag: ["rhcs", "drbd", "pacemaker", "linux", "集群"]
+tag: ["rhcs", "drbd", "linux", "集群"]
 ---
 
 * content
