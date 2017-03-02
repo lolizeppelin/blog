@@ -117,9 +117,21 @@ virsh
 
 修改/etc/ssh/sshd.conf,禁止DNS和GSS
 
-关闭多余的系统服务
+chkconfig关闭多余的系统服务
 
-这里最好重启下(继续用vnc连进去),selinux重启后才能完全关闭
+关闭虚拟机
+
+---
+
+#### 宿主机中操作
+
+虚拟机image  xml中的swap分区,cdrom信息删除,启动盘设置为硬盘
+
+启动虚拟机
+
+---
+
+#### 虚拟机中操作
 
 删除/etc/udev/rules.d/70-persistent-net.rules中当前网卡信息
 
@@ -247,7 +259,7 @@ except (yaml.YAMLError, TypeError, ValueError), e:
     virt-sysprep -d image
     # 压缩虚拟机
     virt-sparsify --compress centos-6.8.qcow2 centos-6.8-image.qcow2
-    # 接下来就可以下载镜像上传到glance了
+    # 接下来virsh undefined image,下载镜像并上传到glance
 ```
 
 宿主机创建时执行脚本实例
