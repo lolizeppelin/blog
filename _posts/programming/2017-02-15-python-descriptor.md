@@ -1,6 +1,6 @@
 ---
 layout: post
-title:  "python 闭包.装饰器.描述器.单例模式"
+title:  "python 描述器"
 date:   2017-02-15 12:50:00 +0800
 categories: "编程"
 tag: ["python", "linux"]
@@ -10,281 +10,7 @@ tag: ["python", "linux"]
 {:toc}
 
 
-因为不是专职python开发,不需要多人合作,也没有写过特别大型的代码。标题上的几个功能和概念工作中一直用不上。
-
-所以一直不太想学习相关的内容,因为这些内容太不C了,只是一种额外的写法而已。但是这两天面试的时候别人问了个闭包导致我直接跪了以后,痛定思痛,捡起来算了,反正以后无论是面试还是工作都要用,花1天学习一下也好。
-
-其实装饰器.描述器.单例模式这几个玩意在openstack里有大量应用,我们就直接以openstack的实际代码来说明
-
-#### 闭包.装饰器,这两玩意在一起说是因为这两玩意基本是在一起的
-
-    专业的解释:闭包（Closure）是词法闭包（Lexical Closure）的简称，
-    它指的是代码块和作用域环境的结合，是引用了自由变量的函数。
-    如果在一个内部函数里，对在外部作用域(但不是在全局作用域）的变量进行引用，
-    那么内部函数就被认为是闭包（closure）。
-    定义在外部函数内的但由内部函数引用或者使用的变量被称为自由变量。闭包在函数式编程中是一个重要的概念。
-    这个被引用的自由变量将和这个函数一同存在，即使已经离开了创造它的环境也不例外。
-
-我们来看看一个简单的闭包
-
-```python
-def a(func):
-    def b():
-        func()
-    return b
-
-```
-
-一个函数a里面又定义了函数b, 当函数b引用了a作用域中的变量func的时候,b就是一个闭包。func就是自由变量
-
-我们把上面函数做为装饰器来使用,假设文件为topics
-
-```python
-def a(func):
-    x = [0]
-    print func.__name__
-    def b():
-        x[0] += 1
-        print x[0]
-        func()
-    return b
-
-@a
-def test():
-    pass
-
-@a
-def test2():
-    pass
-```
-
-至于自由变量count为什么用list不直接用int,可以[参考](http://blog.csdn.net/virtual_func/article/details/50551076),这里的count就是一个函数调用的计数器
-
-直接执行topics.py我们发现即使没调用任何函数,上述代码也会输出函数test和test2的名字
-
-```python
-import topics
-topics.test()
-topics.test()
-topics.test2()
-topics.test2()
-topics.test()
-topics.test2()
-del topics
-import topics
-topics.test()
-```
-
-输出为
-
-```text
-test
-test2
-1
-2
-1
-2
-3
-3
-4
-```
-
-    证明了前面——这个被引用的自由变量将和这个函数一同存在，即使已经离开了创造它的环境也不例外。
-    顺便存在了一个问题,闭包内存是怎么没有释放,这问题我们最后面测试一下
-
-前面的装饰器比较简单,装饰的函数不能接收参数,我们再来一个常见的装饰器的例子
-
-```python
-import functools
-
-def delayer(seconds):
-    """
-    seconds: 延迟的秒数
-    装饰器用于延迟执行函数
-    """
-    def wrapper(func):
-        # @functools.wraps(func)
-        def _wrapper(*args, **kwargs):
-            _start = time.time()
-            time.sleep(seconds)
-            ret = func(*args, **kwargs)
-            print 'time use:', time.time() - _start
-            return ret
-        return _wrapper
-    return wrapper
-
-@delayer(3)
-def test(a):
-    print a
-    return 'bbb'
-
-new_function = test
-print new_function.__name__
-new_function('lalala')
-```
-
-注释那一行和 "print new_function" 部分有关,自己可以试试放开注释有什么效果，具体可以参考[这里](http://www.liaoxuefeng.com/wiki/001374738125095c955c1e6d8bb493182103fac9270762a000/001386819879946007bbf6ad052463ab18034f0254bf355000)。
-
-解释下为什么嵌套三层
-
-    第一层, 接受的参数seconds，延迟时间,无此参数可以少一层嵌套
-    第二层, 接受的参数的func就是外部函数
-    第三层, 接收的参数就是func所接收的参数,func无参数也可以少一层嵌套
-
-如果不用装饰器@delayer(3),那么要实现闭包调用,上述new_function('lalala')就要这样写
-
-```python
-delayer(3)(test)('lalala')
-```
-
-    这里就明白装饰器的实际作用了
-    装饰器只是一个语法糖,简化了套娃一样的写法而已
-    这里具体实现的是闭包, 这种装饰器是函数装饰器
-
-现在我们来段opentack的代码,这个函数装饰器用来限定只调用一起启动。要么用eventlet模式要么用stdlib模式，有点类似我们后面要说的单例模式
-
-```python
-def configure_once(name):
-    """Ensure that environment configuration is only run once.
-
-    If environment is reconfigured in the same way then it is ignored.
-    It is an error to attempt to reconfigure environment in a different way.
-    """
-    def decorator(func):
-        @functools.wraps(func)
-        def wrapper(*args, **kwargs):
-            global _configured
-            if _configured:
-                if _configured == name:
-                    return
-                else:
-                    raise SystemError("Environment has already been "
-                                      "configured as %s" % _configured)
-
-            LOG.debug("Environment configured as: %s", name)
-            _configured = name
-            return func(*args, **kwargs)
-
-        return wrapper
-
-@configure_once('eventlet')
-def use_eventlet(monkeypatch_thread=None):
-    global httplib, subprocess, Server
-    ...
-
-@configure_once('stdlib')
-def use_stdlib():
-    global httplib, subprocess
-    ...
-```
-
-最后我们再来看看自由变量的释放问题,假设文件topics.py
-
-```python
-def counter(func):
-    count = [0]
-    def wrapper(*args, **kwargs):
-        count[0] += 1
-        print 'count: ', str(count[0]),
-        return func(*args, **kwargs)
-    return wrapper
-
-class Myest(object):
-    def __init__(self):
-        pass
-
-    @counter
-    def t(self, arg='in defuault t'):
-        print str(type(self)) + arg
-        pass
-
-    @counter
-    def u(self, arg='in defuault u'):
-        print str(type(self)) + arg
-
-class Myest2(Myest):
-    def __init__(self):
-        Myest.__init__(self)
-
-    @counter
-    def u(self, arg='in defuault u'):
-        print str(type(self)) + arg
-
-@counter
-def text(arg='out default'):
-    print arg
-
-```
-
-假设文件为toptest
-
-```python
-from topics import *
-
-def loli():
-    text()
-
-def lolita():
-    t = Myest2()
-    t.u()
-```
-
-我们执行如下代码
-
-```python
-from topics import *
-import toptest
-text()
-text()
-t = Myest()
-x = Myest()
-t.t()
-t.t()
-x.t()
-t.t()
-t.u()
-x.u()
-x.t()
-del t
-del x
-y = Myest()
-y.t()
-z = Myest2()
-z.t()
-z.u()
-toptest.loli()
-```
-
-输出为
-
-```text
-count:  1 out default
-count:  2 out default
-count:  1 <class '__main__.Myest'>in defuault t
-count:  2 <class '__main__.Myest'>in defuault t
-count:  3 <class '__main__.Myest'>in defuault t
-count:  4 <class '__main__.Myest'>in defuault t
-count:  1 <class '__main__.Myest'>in defuault u
-count:  2 <class '__main__.Myest'>in defuault u
-count:  5 <class '__main__.Myest'>in defuault t
-count:  6 <class '__main__.Myest'>in defuault t
-count:  7 <class '__main__.Myest2'>in defuault t
-count:  1 <class '__main__.Myest2'>in defuault u
-count:  3 out default
-count:  2 <class 'topics.Myest2'>in defuault u
-```
-
-我草泥马好恐怖啊完全不会释放
-
-openstack里很少用到count这样的自由变量,这样就不会有上面的自由变量内存不释放的问题了
-
-## 写装饰器在结尾
-
-经过学习以后可以明白,装饰器对python来说还是必须要学习的....因为太多大型项目代码这个,你不熟悉就傻逼了
-
----
-
-### 描述器、类装饰器
+### 描述器,类装饰器
 
 接下来我们看描述器,先看完一个很好的翻译文章[link](http://pyzh.readthedocs.io/en/latest/Descriptor-HOW-TO-Guide.html)
 
@@ -502,9 +228,13 @@ class Wsgify(object):
                     "Calling %r as a WSGI app with the wrong signature")
             environ = req
             start_response = args[0]
+            # 原代码为req = self.RequestClass(environ)
+            # 也就是req是一个RequestClass实例
+            # 便于测试我们简化为
             req = 'requets'
             args = ()
             resp_callable = self.func(req, *args, **kwargs)
+            # start_response是最外层传入的
             return resp_callable(environ, start_response)
         else:
             return self.func(req, *args, **kwargs)
@@ -779,15 +509,30 @@ Wsgify.__call__(req)
 #### 第一个问题好办
 
 ```python
-
+class A:
     @Wsgify
-    # 根据装饰器的原理,装饰__call__过程为
-    Wsgify(__call__)
-    # 改为
+    def __call__(self, arg):
+        pass
+
+```
+    @Wsgify
+    根据装饰器的原理,装饰A.__call__过程为
+    Wsgify(A.__call__)
+    Wsgify有参数的时候
     @Wsgify(loli='xxx')
-    # 根据装饰器的原理,装饰__call__过程为
-    @Wsgify(loli='xxx')(__call__)
-    # 这样就走到了Wsgify的__call__中
+    根据装饰器的原理,装饰A.__call__过程变为
+    Wsgify(loli='xxx')(A.__call__) === Wsgify(loli='xxx').__call__(A.__call__)
+    也就是说Wsgify自己也要有__call__函数,也就是说
+    A.__call__就走到了Wsgify.__call__中
+
+我们来看看Wsgify的__call__
+
+```python
+class Wsgify(object):
+    def __init__(self, loli=None, func=None):
+        self.loli = loli
+        self.func = func
+
     def __call__(self, req,  *args, **kwargs):
         func = self.func
         if func is None:
@@ -862,7 +607,7 @@ class Router(object):
 
     看见了把, RoutesMiddleware通过mapper生成match, match塞入environ
     再从_dispatch 从match中取出match, 然后返回app
-    这里可以看出其实代码可以写得不需要一个_dispatch
+    这里可以看出其实代码可以完全写得不需要一个_dispatch
     把_dispatch放在外面是为了方便继承重写,修改重定向controller
     顺便,可以看出controller也是一个wsgi app
 
