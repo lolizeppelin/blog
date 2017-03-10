@@ -82,7 +82,7 @@ delayer(3)(test)('lalala')
 
 ##### 这里的装饰器上的delayer是函数, 这种装饰器就是函数装饰
 
-函数装饰器就会牵扯到闭包这个概念,当delayer中有复杂内容时候,具体参考[python 闭包]()
+函数装饰器就会牵扯到闭包这个概念,当delayer中有复杂内容时候,具体参考[python 闭包](http://www.lolizeppelin.com/2017/02/15/python-closure/)
 
 ---
 
@@ -110,7 +110,7 @@ class Descriptor(object):
 ```
 
 
-类装饰器一般用于装饰类中的方法,原理会涉及到[python 描述器]()
+类装饰器一般用于装饰类中的方法,原理会涉及到[python 描述器](http://www.lolizeppelin.com/2017/02/15/python-descriptor/)
 
 ---
 
