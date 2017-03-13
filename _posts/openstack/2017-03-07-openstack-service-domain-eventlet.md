@@ -9,7 +9,7 @@ tag: ["openstack", "python", "linux"]
 * content
 {:toc}
 
-
+openstack的服务都和eventlet有关,建议看本篇之前先看[eventlet使用,绿色线程工作原理](http://www.lolizeppelin.com/2017/03/10/python-eventlet/)
 
 1. launcher  
 > openstack里的launcher有两种(在oslo_service.service中),
@@ -97,7 +97,7 @@ class ProcessLauncher(object):
 
     def _start_child(self, wrap):
         ...
-        # 前面跳过防止fork过快的代码
+        # 省略前面防止fork过快的代码
         pid = os.fork()
         if pid == 0:
             # 子进程中给launcher赋值
@@ -162,12 +162,11 @@ class ProcessLauncher(object):
             LOG.exception(_LE('Unhandled exception'))
             status = 2
         return status, signo
-
     # 上面是子进程用到的代码
-    # 下面是主进程用到的代码
 
+    # 下面是主进程用到的代码
     def wait(self):
-        # 最外层的(也就是systemd指向的脚本里所用的)
+        # 最外层的(也就是systemd指向的脚本里调用到的wait)
         # launch_service后会调用这里
         # 这里是主进程的wait死循环部分,不是self.launcher的wait部分
         systemd.notify_once()   # 通知systemd
@@ -200,7 +199,15 @@ class ProcessLauncher(object):
             # 因为子进程没有退出所有正常都是走到这里
             if not wrap:
                 # 这个sleep比较特别
-                # 这个和eventlet的调度有很大关系
+                # 这个sleep会切换到其他绿色线程
+                # 最少self.wait_interval秒后才会返回当前位置
+                # eventlet.greenthread.sleep其实是创建了一个定时器
+                # 定时器被调度到的时候才切换回当前位置
+                # neutron的的主进程里没有socket相关的调用
+                # 也没有在Hub注册定时器定时器
+                # 所以没有其他绿色线程可以切换
+                # 这里的代码相当于切换到hub中的main loop
+                # 到时间又切换回来
                 eventlet.greenthread.sleep(self.wait_interval)
                 continue
             # 有子进程退出,重新fork出一个worker子进程
@@ -225,11 +232,15 @@ class Launcher(object):
             eventlet_backdoor.initialize_if_enabled(self.conf))
 
     def launch_service(self, service):
-        # 和主进程里的service是一个
+        # service和主进程里的service是同一个
         # 这里和ProcessLauncher中一样先检查service的类型
         _check_service_base(service)
         service.backdoor_port = self.backdoor_port
         # 添加到services中,这里其实就是绿色线程spawn开始的地方
+        # keyston启动的时候两个service,一个public的一个admin的
+        # systemd如果启动nova-api就有两个services, os-computer和mete-data
+        # systemd也可以分别启动os-computer和metadata
+        # 其他一般的services都只有一个service
         self.services.add(service)
 
     def stop(self):
@@ -243,14 +254,14 @@ class Launcher(object):
         self.conf.reload_config_files()
         self.services.restart()
 
-# 由此可见,绿色线程关键启动在Services中
 
 class Services(object):
-
+    # service的start函数的绿色线程在Services中
     def __init__(self):
         # 一个存放service的列表
         self.services = []
         # 初始化一个threadgroup.ThreadGroup()
+        # 这是一个线程池组
         self.tg = threadgroup.ThreadGroup()
         # 先别管这个event对象
         self.done = event.Event()
@@ -319,9 +330,13 @@ class ThreadGroup(object):
     def add_thread(self, callback, *args, **kwargs):
         # 也就是说前面的add方法最终调用了
         # 绿色线程池的spawn方法
-        # 也就是说,这里开始,绿色线程开始让run_service开始被调用
+        # 也就是说,这里开始,绿色线程池开始让run_service
+        # 也就是service的start开始被调用
+        # 返回的gt是一个绿色线程
         gt = self.pool.spawn(callback, *args, **kwargs)
-        # 这个Thread类是用于关联绿色线程和线程池的
+        # 这个Thread类是用于关联绿色线程和线程组的
+        # Thread初始化的时候会调用绿色线程的link方法
+        # link方法用于绿色线程结束后回调一个exit函数
         th = Thread(gt, self)
         self.threads.append(th)
         return th
@@ -345,21 +360,21 @@ class ThreadGroup(object):
 
     def _perform_action_on_threads(self, action_func, on_error_func):
         current = threading.current_thread()
-        # Iterate over a copy of self.threads so thread_done doesn't
-        # modify the list while we're iterating
+        # threads中全部是Thread的实例
         for x in self.threads[:]:
-            # 表明这个绿色线程是当前线程,也就是主线程,跳过
+            # 表明这个绿色线程是当前线程,跳过
             if x.ident == current.ident:
-                # Don't perform actions on the current thread.
                 continue
             try:
                 # 这里就调用了Thread.wait()
                 # Thread.wait()
                 action_func(x)
             except eventlet.greenlet.GreenletExit:  # nosec
-                # greenlet exited successfully
+                # 抛出的异常是GreenletExit
+                # 说明是绿色线程已经正常结束
                 pass
             except Exception:
+                # 上面lamdba里可以看出这里是调用LOG做了记录
                 on_error_func(x)
 
 # 我们来看Thread是什么
@@ -368,6 +383,8 @@ class Thread(object):
         self.thread = thread
         # 调用绿色线程的link函数
         # 绿色线程的link函数用于所执行函数退出的时候回调用
+        # 相当于绿色线程结束的时候调用
+        # _on_thread_done(thread, group, self)
         # _on_thread_done是把当前Thread从ThreadGroup中移除
         self.thread.link(_on_thread_done, group, self)
         # 每个绿色线程的id
@@ -382,7 +399,17 @@ class Thread(object):
 
     def wait(self):
         # 这里最终调用到绿色线程的wait函数
+        # 这里的绿色线程是封装过的GreenThread
         return self.thread.wait()
+
+
+def _on_thread_done(_greenthread, group, thread):
+    # 参数来源参考GreenThread._resolve_links
+    # 第一个参数是调用这个函数的绿色线程
+    # 第二个参数是当前ThreadGroup,link的时候传入的参数
+    # 第三个参数是当前Thread, 也是link的时候传入的
+    # 作用是把当前Thread从ThreadGroup里移除
+    group.thread_done(thread)
 ```
 
-接下来就是复杂的eventlet的分析了,顺便openstack里如何正确使用eventlet[参考]()
+接下来就是复杂的[openstack里eventlet的使用]()
