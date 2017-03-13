@@ -1,6 +1,6 @@
 ---
 layout: post
-title:  "python eventlet使用,协程原理"
+title:  "python eventlet使用,绿色线程工作原理"
 date:   2017-03-10 12:50:00 +0800
 categories: "编程"
 tag: ["python", "linux"]
@@ -41,7 +41,7 @@ CLASSES:
     # 这个就是greenlet主要类
     - class greenlet
 FUNCTIONS:
-    # 这个就是返回当前正在调用的greenlet类实例
+    # 这个就是返回当前的greenlet类实例
     # 其实greenlet的关键原理和yeid应该是差不多的
     # 这个函数也就是为什么要专门弄一个greenlet而不用yeid的原因
     # yeid协程的互相切换对代码改动太多
@@ -71,9 +71,10 @@ class greenlet(__builtin__.object)
  |  
  |  __init__(...)
  |      x.__init__(...) initializes x; see x.__class__.__doc__ for signature
-        主要属性parent
+        主要属性parent, run
         parent一般用于存放运行main loop的绿色线程
         main loop的绿色线程的parent直接=self
+        run就是传入的func
  |  
  |  __nonzero__(...)
  |      x.__nonzero__() <==> x != 0
@@ -145,64 +146,13 @@ class greenlet(__builtin__.object)
 
 简单的greenlet原理看完以后,就要比较深入的学习eventlet的实现了
 
-虽然openstack里调用的都是GreenPool和GreenThread
+虽然openstack里调用的都是GreenPool和GreenThread,但eventlet的核心的工作是在hub里的
 
-但eventlet的核心的工作是在hub里的,需要熟悉hub后再继续,参考[eventlet中Hub的工作原理]()
+需要熟悉hub后再继续,参考[eventlet中Hub的工作原理](http://www.lolizeppelin.com/2017/03/13/python-eventlet-hub/)
 
-看完Hub的原理我们来看看L3 Agent的入口start部分,找到绿色线程的入口代码
-
-```python
-server = neutron_service.Service.create(
-    binary='neutron-l3-agent',
-    topic=topics.L3_AGENT,
-    report_interval=cfg.CONF.AGENT.report_interval,
-    manager=manager)
-
-class Service(n_rpc.Service):
-    ...
-
-    def start(self):
-        ...
-        # 省略非关键代码
-        #  n_rpc.Service中的代码合并过来
-        super(Service, self).start()
-        self.conn = create_connection()
-        LOG.debug("Creating Consumer connection for Service %s",
-                  self.topic)
-        # 关键点!!!!
-        # self.manager是L3NATAgent
-        # L3NATAgent作为endpoints传到rpc接口        
-        endpoints = [self.manager]
-        self.conn.create_consumer(self.topic, endpoints)
-        # Hook to allow the manager to do other initializations after
-        # the rpc connection is created.
-        if callable(getattr(self.manager, 'initialize_service_hook', None)):
-            self.manager.initialize_service_hook(self)
-        # Consume from all consumers in threads
-        self.conn.consume_in_threads()
-        self.manager.after_start()
-        ....
-
-
-class L3NATAgent:
-
-    def after_start(self):
-        .....
-        eventlet.spawn_n(self._process_routers_loop)
-        LOG.info(_LI("L3 agent started"))
-
-    def _process_routers_loop(self):
-        ...
-        pool = eventlet.GreenPool(size=8)
-        while True:
-            pool.spawn_n(self._process_router_update)
-
-```
-
-最初的入口是eventlet.spawn_n,我们来看看
+我们先看看GreenThread类,它重新封装了greenlet.greenlet
 
 ```python
-# 简单看看GreenThread
 
 class GreenThread(greenlet.greenlet):
     # 继承自greenlet
@@ -210,6 +160,7 @@ class GreenThread(greenlet.greenlet):
     # 将自身main函数互作为func来初始化greenlet
     def __init__(self, parent):
         greenlet.greenlet.__init__(self, self.main, parent)
+        # event也是比较复杂的,用原生的greenlet就没有这个Event
         self._exit_event = event.Event()
         self._resolving_links = False
 
@@ -224,32 +175,242 @@ class GreenThread(greenlet.greenlet):
         else:
             self._exit_event.send(result)
             self._resolve_links()
+```
 
-# 下面是各个spawn
+一般我们通过spawn来生成GreenThread,下面是各个spawn
+
+
+```python
 
 def spawn(func, *args, **kwargs):   # 这个相当seconds为0的spawn_after
     hub = hubs.get_hub()
-    # 生成绿色线程
+    # 生成绿色线程GreenThread
     g = GreenThread(hub.greenlet)
-    # 将这个绿色线程注册到hub
+    # 将这个绿色封装为timer
+    # 然后加入到预备定时器列表中
     hub.schedule_call_global(0, g.switch, func, args, kwargs)
+    # 当定时器被hub执行的时候,通过timer的__call__函数
+    # 调用g.switch(func, args, kwargs)
+    # 因为greenlet.run也就是GreenThread.main还没有被调用过
+    # 开始执行GreenThread.main
+    # 最终执行func
+    # 由于GreenThread的main中还封装了相关的_resolve_links和_exit_event
+    # 所以spawn比spawn_n慢
+    # 只有一个返回值,不返回timer,只返回绿色线程GreenThread实例
     return g
 
-def spawn_n(func, *args, **kwargs): # 这个就是被agent调用的,他和spawn有什么区别呢?
+def spawn_n(func, *args, **kwargs): # 这个就是被agent调用的,我们看看他和spawn有什么区别
+    # 也返回绿色线程greenlet.greenlet实例
     return _spawn_n(0, func, args, kwargs)[1]
 
 def _spawn_n(seconds, func, args, kwargs):
     hub = hubs.get_hub()
-    # 生成绿色线程
+    # 生成绿色线程greenlet.greenlet
     g = greenlet.greenlet(func, parent=hub.greenlet)
-    # 将这个绿色线程注册到hub
+    # 当定时器被hub执行的时候,通过timer的__call__函数
+    # 调用g.switch(args, kwargs)
+    # 因为greenlet.run也就是func还没有被调用过
+    # 开始执行执行func(*args, **kwargs)
     t = hub.schedule_call_global(seconds, g.switch, *args, **kwargs)
     return t, g
 
 def spawn_after(seconds, func, *args, **kwargs):    # 这个相当于可以带seconds参数的spawn
     hub = hubs.get_hub()
     g = GreenThread(hub.greenlet)
+    # 带了参数,定时器会被延迟触发
     hub.schedule_call_global(seconds, g.switch, func, args, kwargs)
     return g
 
+# 回顾下Hub.schedule_call_global
+
+class Hub()
+    ...
+    def schedule_call_global(self, seconds, cb, *args, **kw):
+        # 生成定时器类
+        t = timer.Timer(seconds, cb, *args, **kw)
+        # 这里会添加到预备定时器列表
+        self.add_timer(t)
+        # 返回定时器实例
+        return t
+
+```
+
+我们来详细看看GreenThread里的其他方法
+
+```python
+class GreenThread(greenlet.greenlet):
+    def __init__(self, parent):
+        greenlet.greenlet.__init__(self, self.main, parent)
+        self._exit_event = event.Event()
+        self._resolving_links = False
+
+    def main(self, function, args, kwargs):
+        try:
+            result = function(*args, **kwargs)
+        except:
+            # function执行报错,调用send_exception让绿色线程throw出异常
+            self._exit_event.send_exception(*sys.exc_info())
+            self._resolve_links()
+            raise
+        else:
+            # function执行成功,调用send
+            # send最终通过switch接收result
+            self._exit_event.send(result)
+            self._resolve_links()
+
+    def wait(self):
+        return self._exit_event.wait()
+
+    def link(self, func, *curried_args, **curried_kwargs):
+        # 注册一个退出函数
+        # 默认为deque对列
+        self._exit_func = getattr(self, '_exit_funcs', deque())
+        # 插到self._exit_func队列里
+        self._exit_funcs.append((func, curried_args, curried_kwargs))
+        # 如果event已经不是NOT_USED标记
+        # 也就是说已经被USED了
+        if self._exit_event.ready():
+            # 看后面_resolve_links
+            self._resolve_links()
+
+    def unlink(self, func, *curried_args, **curried_kwargs):
+        # 移除退出函数
+        if not getattr(self, '_exit_funcs', None):
+            return False
+        try:
+            self._exit_funcs.remove((func, curried_args, curried_kwargs))
+            return True
+        except ValueError:
+            return False
+
+    def _resolve_links(self):
+        # 判断是否已经resolving_links
+        if self._resolving_links:
+            return
+        # 设置resolving_links标记
+        # 退出函数也可能是绿色线程会switch到main loop
+        self._resolving_links = True
+        try:
+            exit_funcs = getattr(self, '_exit_funcs', deque())
+            # 从self._exit_funcs队列中取出所有退出需要执行的函数
+            while exit_funcs:
+                f, ca, ckw = exit_funcs.popleft()
+                # 执行所有退出函数
+                f(self, *ca, **ckw)
+        finally:
+            # 重新设置_resolving_links
+            self._resolving_links = False
+
+```
+
+event类
+
+```python
+
+class NOT_USED:
+    def __repr__(self):
+        return 'NOT_USED'
+
+# 这个单例子用来做is判断
+# 比字符串比较
+# 还能输出字符串
+NOT_USED = NOT_USED()
+
+class Event(object):
+    _result = None
+    _exc = None
+
+    def __init__(self):
+        # 一个列表用于存放正在等待的绿色线程
+        # 这里可以看出这个Event是可能被多个绿色线程调用
+        self._waiters = set()
+        # 初始化self._result、self._exc值
+        self.reset()
+
+    def __str__(self):
+        params = (self.__class__.__name__, hex(id(self)),
+                  self._result, self._exc, len(self._waiters))
+        return '<%s at %s result=%r _exc=%r _waiters[%d]>' % params
+
+    def reset(self):
+        # 必须在  self._result不是NOT_USED的时候调用
+        assert self._result is not NOT_USED, 'Trying to re-reset() a fresh event.'
+        self._result = NOT_USED
+        self._exc = None
+
+    def ready(self):
+        # 当 self._result 不是 NOT_USED的时候
+        # init后self._result == NOT_USED
+        return self._result is not NOT_USED
+
+    def has_exception(self):
+        return self._exc is not None
+
+    def has_result(self):
+        return self._result is not NOT_USED and self._exc is None
+
+    def poll(self, notready=None):
+        if self.ready():
+            return self.wait()
+        return notready
+
+    def poll_exception(self, notready=None):
+        # 用于poll错误
+        if self.has_exception():
+            return self.wait()
+        return notready
+
+    def poll_result(self, notready=None):
+        # 用于推送result
+        if self.has_result():
+            return self.wait()
+        return notready
+
+    def wait(self):
+        # 绿色线程GreenThread调用wait的时候会走到这里
+        current = greenlet.getcurrent()
+        # _result还是默认标记
+        if self._result is NOT_USED:
+            # 把当前绿色线程放入_waiters这个list中
+            self._waiters.add(current)
+            try:
+                # 先切换到main loop
+                # 切换回来的时候
+                # 把_waiters中的当前绿色线删除(discard方法不报错)
+                return hubs.get_hub().switch()
+            finally:
+                self._waiters.discard(current)
+        # 如果self._exc不为空通过绿色线程throw异常
+        if self._exc is not None:
+            current.throw(*self._exc)
+        return self._result
+
+    def send_exception(self, *args):
+        # 发送一个exception
+        return self.send(None, args)
+
+    def send(self, result=None, exc=None):
+        #  self._result还是默认标记才能send
+        assert self._result is NOT_USED, 'Trying to re-send() an already-triggered event.'
+        # 设置_result
+        self._result = result
+        if exc is not None and not isinstance(exc, tuple):
+            exc = (exc, )
+        self._exc = exc
+        hub = hubs.get_hub()
+        # _waiters中所有绿色线程作为参数
+        # 创建多个定时器
+        for waiter in self._waiters:
+            hub.schedule_call_global(
+                0, self._do_send, self._result, self._exc, waiter)
+
+    def _do_send(self, result, exc, waiter):
+        # 在hub中fire_timers的cb调用
+        # 这里再次判断waiter是否还在_waiters中
+        # 因为可能会被其他绿色线程cancel掉
+        if waiter in self._waiters:
+            if exc is None:
+                waiter.switch(result)
+            else:
+                waiter.throw(*exc)
 ```

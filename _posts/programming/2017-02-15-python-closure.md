@@ -186,4 +186,4 @@ count:  2 <class 'topics.Myest2'>in defuault u
 
 openstack里很少用到count这样的自由变量,这样就不会有上面的自由变量内存不释放的问题了
 
-要更理解闭包,我们就要先理解另外一个概念——[python的单例模式](http://www.lolizeppelin.com/2017/03/07/python-singleton/)
+要更理解闭包,我们就要先理解另外一个概念——[python的单例模式](http://www.lolizeppelin.com/2017/03/06/python-singleton/)
