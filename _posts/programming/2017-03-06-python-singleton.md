@@ -1,7 +1,7 @@
 ---
 layout: post
 title:  "python 单例模式"
-date:   2017-03-07 12:50:00 +0800
+date:   2017-03-06 12:50:00 +0800
 categories: "编程"
 tag: ["python", "linux"]
 ---
@@ -47,7 +47,7 @@ def launch(conf, service, workers=1):
         launcher = ProcessLauncher(conf)
         launcher.launch_service(service, workers=workers)
     return launcher
-    
+
 _launcher = None
 
 def serve(server, workers=None):
@@ -132,4 +132,6 @@ intance = singleton.singleton
 
 因为python中的module就是最好的单例模式
 
-写在最末尾,了解单例模式最重要的其实是更好的理解pthon中一切皆对象,我们回头看看python的闭包函数的疑问
+#### 写在最末尾,了解单例模式可以更好的理解pthon中一切皆对象
+
+我们现在回头看看python的闭包函数中自由变量的疑问,待续

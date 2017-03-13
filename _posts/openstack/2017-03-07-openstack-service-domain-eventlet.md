@@ -1,7 +1,7 @@
 ---
 layout: post
 title:  "OpenStack Mitaka从零开始 openstack的守护进程实现过程"
-date:   2016-12-06 15:05:00 +0800
+date:   2017-03-07 15:05:00 +0800
 categories: "虚拟化"
 tag: ["openstack", "python", "linux"]
 ---
@@ -129,14 +129,13 @@ class ProcessLauncher(object):
         # 后面又注册一次不是很理解
         self._child_process_handle_signal()
         # 后面就是eventlet相关代码
-        # Reopen the eventlet hub to make sure we don't share an epoll
-        # fd with parent and/or siblings, which would be bad
+        # 这里初始化一个hub
         eventlet.hubs.use_hub()
-        # Close write to ensure only parent has it open
+        # 子进程关闭写管道
         os.close(self.writepipe)
-        # Create greenthread to watch for parent to close pipe
+        # 孵化一个_pipe_watcher函数,用于监控管道
         eventlet.spawn_n(self._pipe_watcher)
-        # Reseed random number generator
+        # 运行一个随机函数,具体作用未知
         random.seed()
         # 这里就是调用Launcher,注意不是ProcessLauncher
         launcher = Launcher(self.conf)
@@ -150,6 +149,7 @@ class ProcessLauncher(object):
         try:
             # 子进程的工作循环在这里
             # 这个launcher不是ProcessLauncher
+            # 看下面launcher的wait部分
             launcher.wait()
         except SignalExit as exc:
             signame = self.signal_handler.signals_to_name[exc.signo]
@@ -167,9 +167,10 @@ class ProcessLauncher(object):
     # 下面是主进程用到的代码
 
     def wait(self):
+        # 最外层的(也就是systemd指向的脚本里所用的)
+        # launch_service后会调用这里
         # 这里是主进程的wait死循环部分,不是self.launcher的wait部分
-        # 通知systemd
-        systemd.notify_once()
+        systemd.notify_once()   # 通知systemd
         if self.conf.log_options:
             LOG.debug('Full set of CONF:')
             self.conf.log_opt_values(LOG, logging.DEBUG)
@@ -177,8 +178,9 @@ class ProcessLauncher(object):
             # 这个循环不是工作循环
             # 这个是用于进程崩溃后自动重启的
             while True:
+                # 注册信号
                 self.handle_signal()
-                # 死循环在此,这个函数用于重启子进程
+                # 死循环在此,这个函数用于监控并重启子进程
                 self._respawn_children()
                 # 走到这里表示主进程收到退出信号
                 if not self.sigcaught:
@@ -198,7 +200,7 @@ class ProcessLauncher(object):
             # 因为子进程没有退出所有正常都是走到这里
             if not wrap:
                 # 这个sleep比较特别
-                # 后面在看这个sleep
+                # 这个和eventlet的调度有很大关系
                 eventlet.greenthread.sleep(self.wait_interval)
                 continue
             # 有子进程退出,重新fork出一个worker子进程
@@ -207,7 +209,7 @@ class ProcessLauncher(object):
 
 ```
 
-下面我们来看Launcher和Services, Launcher也就是ProcessLauncher中的self.Launcher
+下面我们来看和子进程相关的Launcher和Services, Launcher也就是ProcessLauncher中的self.Launcher
 
 ```python
 class Launcher(object):
@@ -223,6 +225,7 @@ class Launcher(object):
             eventlet_backdoor.initialize_if_enabled(self.conf))
 
     def launch_service(self, service):
+        # 和主进程里的service是一个
         # 这里和ProcessLauncher中一样先检查service的类型
         _check_service_base(service)
         service.backdoor_port = self.backdoor_port
@@ -233,6 +236,7 @@ class Launcher(object):
         self.services.stop()
 
     def wait(self):
+        # 看下下面service的wait
         self.services.wait()
 
     def restart(self):
@@ -257,6 +261,8 @@ class Services(object):
         # self.run_service是函数, service, self.done是
         # self.run_service的参数
         self.services.append(service)
+        # run_service最终会调用service的start方法
+        # service就是外部传入的基于ServiceBase类的外部实例
         self.tg.add_thread(self.run_service, service, self.done)
 
     def stop(self):
@@ -274,8 +280,13 @@ class Services(object):
 
     def wait(self):
         """Wait for services to shut down."""
+        # 这个wait先调用外部service的wait
+        # service的wait一般是调用所有定时器的wait函数
+        # service常用的定时器 1是定期汇报(相当于心跳)  2 是定时任务
         for service in self.services:
             service.wait()
+        # 最终会调用ThreadGroup的wait
+        # 看下面ThreadGroup的wait
         self.tg.wait()
 
     def restart(self):
@@ -297,9 +308,7 @@ class Services(object):
         else:
             done.wait()
 
-
-# 我们来看ThreadGroup是什么
-
+# 我们再来看ThreadGroup是什么
 class ThreadGroup(object):
     def __init__(self, thread_pool_size=10):
         # eventlet 绿色线程的池在这里初始化
@@ -310,11 +319,70 @@ class ThreadGroup(object):
     def add_thread(self, callback, *args, **kwargs):
         # 也就是说前面的add方法最终调用了
         # 绿色线程池的spawn方法
+        # 也就是说,这里开始,绿色线程开始让run_service开始被调用
         gt = self.pool.spawn(callback, *args, **kwargs)
+        # 这个Thread类是用于关联绿色线程和线程池的
         th = Thread(gt, self)
         self.threads.append(th)
         return th
 
+    def wait(self):
+        # 这里是ThreadGroup自己的定时器
+        # 需要使用ThreadGroup的时候自行添加
+        # 目前没看到哪里有用
+        for x in self.timers:
+            try:
+                x.wait()
+            except eventlet.greenlet.GreenletExit:  # nosec
+                # greenlet exited successfully
+                pass
+            except Exception:
+                LOG.exception(_LE('Error waiting on timer.'))
+        # wait调用这里
+        self._perform_action_on_threads(
+            lambda x: x.wait(),
+            lambda x: LOG.exception(_LE('Error waiting on thread.')))
+
+    def _perform_action_on_threads(self, action_func, on_error_func):
+        current = threading.current_thread()
+        # Iterate over a copy of self.threads so thread_done doesn't
+        # modify the list while we're iterating
+        for x in self.threads[:]:
+            # 表明这个绿色线程是当前线程,也就是主线程,跳过
+            if x.ident == current.ident:
+                # Don't perform actions on the current thread.
+                continue
+            try:
+                # 这里就调用了Thread.wait()
+                # Thread.wait()
+                action_func(x)
+            except eventlet.greenlet.GreenletExit:  # nosec
+                # greenlet exited successfully
+                pass
+            except Exception:
+                on_error_func(x)
+
+# 我们来看Thread是什么
+class Thread(object):
+    def __init__(self, thread, group):
+        self.thread = thread
+        # 调用绿色线程的link函数
+        # 绿色线程的link函数用于所执行函数退出的时候回调用
+        # _on_thread_done是把当前Thread从ThreadGroup中移除
+        self.thread.link(_on_thread_done, group, self)
+        # 每个绿色线程的id
+        self._ident = id(thread)
+
+    @property
+    def ident(self):
+        return self._ident
+
+    def stop(self):
+        self.thread.kill()
+
+    def wait(self):
+        # 这里最终调用到绿色线程的wait函数
+        return self.thread.wait()
 ```
 
-接下来就是复杂的eventlet的分析了
+接下来就是复杂的eventlet的分析了,顺便openstack里如何正确使用eventlet[参考]()
