@@ -29,7 +29,6 @@ eventlet基于greenlet,greenlet是c写的,但是我放弃看greenlet源码了
 可以[参考1](http://www.tuicool.com/articles/2uQjEn), [参考2](http://www.jianshu.com/p/cd41c14b19f4)
 
 
-
 greenlet有如下内容
 
 ```yaml
@@ -241,6 +240,10 @@ class Hub()
 class GreenThread(greenlet.greenlet):
     def __init__(self, parent):
         greenlet.greenlet.__init__(self, self.main, parent)
+        # GreenThread区别与greenlet在于
+        # 1.有一个_exit_event属性是Event类
+        # 2.封装了greenlet的run
+        # 在run的前后进行了一些link和unlink
         self._exit_event = event.Event()
         self._resolving_links = False
 
@@ -262,13 +265,13 @@ class GreenThread(greenlet.greenlet):
         return self._exit_event.wait()
 
     def link(self, func, *curried_args, **curried_kwargs):
-        # 注册一个退出函数
+        # 如果没有_exit_func，生成退出函数队列
         # 默认为deque对列
         self._exit_func = getattr(self, '_exit_funcs', deque())
-        # 插到self._exit_func队列里
+        # 把要执行的函数插到self._exit_func队列里
         self._exit_funcs.append((func, curried_args, curried_kwargs))
         # 如果event已经不是NOT_USED标记
-        # 也就是说已经被USED了
+        # 也就是说event调用过send之类的函数
         if self._exit_event.ready():
             # 看后面_resolve_links
             self._resolve_links()
@@ -288,7 +291,8 @@ class GreenThread(greenlet.greenlet):
         if self._resolving_links:
             return
         # 设置resolving_links标记
-        # 退出函数也可能是绿色线程会switch到main loop
+        # 退出函数也可能是绿色线程会switch到main loop后变到其他绿色线程
+        # 并在其他线程里调用_resolve_links
         self._resolving_links = True
         try:
             exit_funcs = getattr(self, '_exit_funcs', deque())
@@ -301,116 +305,4 @@ class GreenThread(greenlet.greenlet):
             # 重新设置_resolving_links
             self._resolving_links = False
 
-```
-
-event类
-
-```python
-
-class NOT_USED:
-    def __repr__(self):
-        return 'NOT_USED'
-
-# 这个单例子用来做is判断
-# 比字符串比较
-# 还能输出字符串
-NOT_USED = NOT_USED()
-
-class Event(object):
-    _result = None
-    _exc = None
-
-    def __init__(self):
-        # 一个列表用于存放正在等待的绿色线程
-        # 这里可以看出这个Event是可能被多个绿色线程调用
-        self._waiters = set()
-        # 初始化self._result、self._exc值
-        self.reset()
-
-    def __str__(self):
-        params = (self.__class__.__name__, hex(id(self)),
-                  self._result, self._exc, len(self._waiters))
-        return '<%s at %s result=%r _exc=%r _waiters[%d]>' % params
-
-    def reset(self):
-        # 必须在  self._result不是NOT_USED的时候调用
-        assert self._result is not NOT_USED, 'Trying to re-reset() a fresh event.'
-        self._result = NOT_USED
-        self._exc = None
-
-    def ready(self):
-        # 当 self._result 不是 NOT_USED的时候
-        # init后self._result == NOT_USED
-        return self._result is not NOT_USED
-
-    def has_exception(self):
-        return self._exc is not None
-
-    def has_result(self):
-        return self._result is not NOT_USED and self._exc is None
-
-    def poll(self, notready=None):
-        if self.ready():
-            return self.wait()
-        return notready
-
-    def poll_exception(self, notready=None):
-        # 用于poll错误
-        if self.has_exception():
-            return self.wait()
-        return notready
-
-    def poll_result(self, notready=None):
-        # 用于推送result
-        if self.has_result():
-            return self.wait()
-        return notready
-
-    def wait(self):
-        # 绿色线程GreenThread调用wait的时候会走到这里
-        current = greenlet.getcurrent()
-        # _result还是默认标记
-        if self._result is NOT_USED:
-            # 把当前绿色线程放入_waiters这个list中
-            self._waiters.add(current)
-            try:
-                # 先切换到main loop
-                # 切换回来的时候
-                # 把_waiters中的当前绿色线删除(discard方法不报错)
-                return hubs.get_hub().switch()
-            finally:
-                self._waiters.discard(current)
-        # 如果self._exc不为空通过绿色线程throw异常
-        if self._exc is not None:
-            current.throw(*self._exc)
-        return self._result
-
-    def send_exception(self, *args):
-        # 发送一个exception
-        return self.send(None, args)
-
-    def send(self, result=None, exc=None):
-        #  self._result还是默认标记才能send
-        assert self._result is NOT_USED, 'Trying to re-send() an already-triggered event.'
-        # 设置_result
-        self._result = result
-        if exc is not None and not isinstance(exc, tuple):
-            exc = (exc, )
-        self._exc = exc
-        hub = hubs.get_hub()
-        # _waiters中所有绿色线程作为参数
-        # 创建多个定时器
-        for waiter in self._waiters:
-            hub.schedule_call_global(
-                0, self._do_send, self._result, self._exc, waiter)
-
-    def _do_send(self, result, exc, waiter):
-        # 在hub中fire_timers的cb调用
-        # 这里再次判断waiter是否还在_waiters中
-        # 因为可能会被其他绿色线程cancel掉
-        if waiter in self._waiters:
-            if exc is None:
-                waiter.switch(result)
-            else:
-                waiter.throw(*exc)
 ```

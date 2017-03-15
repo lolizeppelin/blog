@@ -20,7 +20,7 @@ _threadlocal = threading.local()
 
 def get_hub():
     try:
-        # 从线程局部变量中或去hub
+        # 从线程局部变量中获取hub
         hub = _threadlocal.hub
     except AttributeError:
         try:
@@ -58,8 +58,13 @@ class Timer(object):
         self.seconds = seconds
         # cb这个参数一般是GreenThread/greenlet的switch
         # *args, **kw自然就是传给switch的参数
-        # 一般没有
+
         # cb也不一定是switch,也可能是event之类用于通知的调用接口
+        # cb也可以直接是一个外部函数
+        # 但如果是一个外部函数,这个函数必须是阻塞的而且运行时间短的
+        # 否则会影响整个main loop
+
+        # 所以这个cb尽量不要传函数而是传绿色线程的switch过来
         self.tpl = cb, args, kw
         # 当前定时器是否被调用过
         self.called = False
@@ -83,19 +88,22 @@ class Timer(object):
         return self
 
     def __call__(self, *args):
-        # 这个__call__接受的args参数是没用的
         # 当这个定时器被调用的时候
-        # 激活这个timer中的绿色线程
+        # 激活这个timer中的绿色线程/函数
+        # 这个__call__接受的args参数是没用的
+        # 这里的参数是防止外部写错了传参导致报错
+        # 所以timer的调用都是直接timer()
         if not self.called:
             # 当前timer被调用后
             # 设置被调用标记
             self.called = True
             cb, args, kw = self.tpl
             try:
-                # 一般情况下
+                # 当cb是GreenThread/greenlet 的switch时
                 # cb(*args, **kw)相当于
-                # GreenThread/greenlet
                 # 执行的switch(*args, **kw)
+
+                # 否则就是执行具体的外部函数
                 cb(*args, **kw)
             finally:
                 try:
@@ -549,8 +557,10 @@ class Hub(object):
                 clear_sys_exc_info()
 
     def schedule_call_global(self, seconds, cb, *args, **kw):
-        # 把一个绿色线程/函数分装为timer
+        # 把一个绿色线程/函数封装为timer, cb就是这个函数或者绿色线程的switch
         # 并加入到next_timers预备定时器列表中
+        # timer被main loop调用的时候
+        # 会执行cb(*args, **kw)
         t = timer.Timer(seconds, cb, *args, **kw)
         self.add_timer(t)
         return t
@@ -658,7 +668,8 @@ class GreenSocket(object):
                 # does not raise a timeout exception. Since we're simulating
                 # a blocking socket here we need to produce a timeout exception
                 # if needed, hence the call to trampoline.
-                # 这里的判断表明!!!!设置了recv的长度,会不走绿色线程!!!
+                # 因为说明就不翻译了
+                # 这里的判断可以看出!!!!设置了recv的长度,会不走绿色线程!!!
                 if not args[0]:
                     # 这里是封装了的trampoline函数
                     # 这里走完表示epoll在当前fd有事件
@@ -706,3 +717,27 @@ class GreenSocket(object):
             raise
 
 ```
+
+我们现在来总结下,我们先简化一下Hub的man loop
+
+```python
+while not self.stopping:
+    self.prepare_timers()
+    self.fire_timers(self.clock())
+    self.prepare_timers()
+    self.wait(0)
+```
+
+
+Hup的main loop里主要的工作
+
+    1、处理定时器,定时器到点就调用timer中的cb
+    2、处理完定时器后,检查self.listeners字典
+       如果里面有内容,就调用epoll扫描字典中的fd
+       如果fd中有事件，切换到fd相关的绿色线程
+
+    定时器的添加一般通过Hub.schedule_call_global生成
+    listeners的添加一般通过Hub.add或者封装过的trampoline函数
+    monkey patch后的socket.socket等被替换,执行诸如socket.recv之类的函数最终会根据情况调用trampoline
+
+到这里,我们就大致的理解了eventlet的Hub工作原理了,eventlet也就明白了一半,下面就要看[eventlet中event的工作原理]()

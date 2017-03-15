@@ -1,6 +1,6 @@
 ---
 layout: post
-title:  "python openstack里eventlet的使用"
+title:  "OpenStack Mitaka从零开始 openstack里eventlet的使用"
 date:   2017-03-13 12:50:00 +0800
 categories: "虚拟化"
 tag: ["openstack", "python", "linux"]
@@ -11,9 +11,31 @@ tag: ["openstack", "python", "linux"]
 
 openstack里如何使用monkey patch的参考[这篇](http://www.lolizeppelin.com/2017/03/13/python-modules-init/)
 
-看完Hub的原理我们来看看L3 Agent的入口start部分,找到绿色线程的入口代码
+然后我们要学习[eventlet使用,绿色线程工作原理](http://www.lolizeppelin.com/2017/03/10/python-eventlet/)
+
+看完绿色线程工作原理我们来看看L3 Agent的入口start部分,找到绿色线程的入口代码
 
 ```python
+
+# 回顾下前面的代码
+
+class Services
+     ....
+
+    @staticmethod
+    def run_service(service, done):
+        # 这里调用了service的start方法并wait
+        # done是Services类实力的done属性
+        # done是一个Event.event()
+        try:
+            service.start()
+        except Exception:
+            LOG.exception(_LE('Error starting thread.'))
+            raise SystemExit(1)
+        else:
+            done.wait()
+
+
 server = neutron_service.Service.create(
     binary='neutron-l3-agent',
     topic=topics.L3_AGENT,
@@ -22,7 +44,8 @@ server = neutron_service.Service.create(
 
 class Service(n_rpc.Service):
     ...
-
+    # 这里也就是run_service函数
+    # 最终调用的service.start的位置
     def start(self):
         ...
         # 省略非关键代码

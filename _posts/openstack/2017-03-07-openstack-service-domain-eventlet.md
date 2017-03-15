@@ -1,6 +1,6 @@
 ---
 layout: post
-title:  "OpenStack Mitaka从零开始 openstack的守护进程实现过程"
+title:  "OpenStack Mitaka从零开始 openstack的守护进程启动过程"
 date:   2017-03-07 15:05:00 +0800
 categories: "虚拟化"
 tag: ["openstack", "python", "linux"]
@@ -263,7 +263,7 @@ class Services(object):
         # 初始化一个threadgroup.ThreadGroup()
         # 这是一个线程池组
         self.tg = threadgroup.ThreadGroup()
-        # 先别管这个event对象
+        # event对象
         self.done = event.Event()
 
     def add(self, service):
@@ -306,6 +306,10 @@ class Services(object):
         self.done = event.Event()
         for restart_service in self.services:
             restart_service.reset()
+            # 这里最终会spawn
+            # 实例的event会作为参数传入
+            # 也就是说service.start()完成后
+            # 调用event.wait()
             self.tg.add_thread(self.run_service, restart_service, self.done)
 
     @staticmethod
@@ -412,4 +416,4 @@ def _on_thread_done(_greenthread, group, thread):
     group.thread_done(thread)
 ```
 
-接下来就是复杂的[openstack里eventlet的使用]()
+接下来就是复杂的[openstack里eventlet的使用](http://www.lolizeppelin.com/2017/03/13/openstack-eventlet-use/)

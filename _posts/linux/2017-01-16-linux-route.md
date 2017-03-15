@@ -403,6 +403,7 @@ ip rule是什么
 
 ip rule使用
 
+```text
    ip rule [ list | add | del ] SELECTOR ACTION
 
    SELECTOR := [ from PREFIX ] [ to PREFIX ] [ tos TOS ] [ fwmark FWMARK ] [ dev STRING ] [ pref NUMBER ]
@@ -410,25 +411,15 @@ ip rule使用
    ACTION := [ table TABLE_ID ] [ nat ADDRESS ] [ prohibit | reject | unreachable ] [ realms [SRCREALM/]DSTREALM ]
 
    TABLE_ID := [ local | main | default | NUMBER ]
-
-
----
-
-分割线,虚拟化好像没用到ip rule,都是默认规则
-
-也就是所有网络包都走一遍local表,没匹配就走main表
+```
 
 ---
 
+分割线,openstack只有一个地方用了ip rule
 
+其他都是默认规则,也就是所有网络包都走一遍local表,没匹配就走main表
 
-
-
-
-
-
-
-
+---
 
 
 重新认识NAT
