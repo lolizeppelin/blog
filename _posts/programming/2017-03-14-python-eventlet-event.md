@@ -10,7 +10,7 @@ tag: ["python", "linux"]
 {:toc}
 
 
-我们来看event类
+我们来看event类, eventlet.event.Event
 
 ```python
 
@@ -31,48 +31,10 @@ class Event(object):
     def __init__(self):
         # 一个列表用于存放正在等待的绿色线程
         # 这里可以看出这个Event是可能被多个绿色线程调用
+        # 也就是多个绿色线程的函数里传输数据就用event
         self._waiters = set()
         # 初始化self._result、self._exc值
         self.reset()
-
-    def __str__(self):
-        params = (self.__class__.__name__, hex(id(self)),
-                  self._result, self._exc, len(self._waiters))
-        return '<%s at %s result=%r _exc=%r _waiters[%d]>' % params
-
-    def reset(self):
-        # 必须在  self._result不是NOT_USED的时候调用
-        assert self._result is not NOT_USED, 'Trying to re-reset() a fresh event.'
-        self._result = NOT_USED
-        self._exc = None
-
-    def ready(self):
-        # 当 self._result 不是 NOT_USED的时候
-        # init后self._result == NOT_USED
-        return self._result is not NOT_USED
-
-    def has_exception(self):
-        return self._exc is not None
-
-    def has_result(self):
-        return self._result is not NOT_USED and self._exc is None
-
-    def poll(self, notready=None):
-        if self.ready():
-            return self.wait()
-        return notready
-
-    def poll_exception(self, notready=None):
-        # 用于poll错误
-        if self.has_exception():
-            return self.wait()
-        return notready
-
-    def poll_result(self, notready=None):
-        # 用于推送result
-        if self.has_result():
-            return self.wait()
-        return notready
 
     def wait(self):
         # 绿色线程GreenThread调用wait的时候会走到这里
@@ -80,6 +42,8 @@ class Event(object):
         # _result还是默认标记
         if self._result is NOT_USED:
             # 把当前绿色线程放入_waiters这个list中
+            # 这里看出_waiters的作用了
+            # 多个绿色线程等待一个函数的返回值
             self._waiters.add(current)
             try:
                 # 先切换到main loop
@@ -98,6 +62,11 @@ class Event(object):
         return self.send(None, args)
 
     def send(self, result=None, exc=None):
+        # GreenThread被switch到
+        # GreenThread.main()中执行完外部function后
+        # 外部function的返回值会通过
+        # event.send来发送
+
         #  self._result还是默认标记才能send
         assert self._result is NOT_USED, 'Trying to re-send() an already-triggered event.'
         # 设置_result
@@ -107,18 +76,23 @@ class Event(object):
         self._exc = exc
         hub = hubs.get_hub()
         # _waiters中所有绿色线程作为参数
-        # 创建多个定时器
+        # 创建多个定时器在main loop中调用
+        # 这里绕了一下没有直接调用waiter.switch
         for waiter in self._waiters:
             hub.schedule_call_global(
                 0, self._do_send, self._result, self._exc, waiter)
 
     def _do_send(self, result, exc, waiter):
-        # 在hub中fire_timers的cb调用
         # 这里再次判断waiter是否还在_waiters中
         # 因为可能会被其他绿色线程cancel掉
         if waiter in self._waiters:
+            # 可以看出返回值是通过switch来发送的
             if exc is None:
                 waiter.switch(result)
             else:
                 waiter.throw(*exc)
 ```
+
+event类大致看完其实我们还不知道如何使用,我们先回到[eventlet使用,绿色线程工作原理](http://www.lolizeppelin.com/2017/03/10/python-eventlet/)中继续后面的部分
+
+这样才能看懂event类具体的使用

@@ -56,15 +56,19 @@ class Timer(object):
         # 如果要延迟0.01秒调用
         # 这个时间是 time.time() + 0.01
         self.seconds = seconds
+
         # cb这个参数一般是GreenThread/greenlet的switch
         # *args, **kw自然就是传给switch的参数
 
         # cb也不一定是switch,也可能是event之类用于通知的调用接口
+        # 注意这里所说的event不是epoll的event,是eventlet.event.Event
+        # 如果是event,里面会有更复杂的绿色线程切换
+
         # cb也可以直接是一个外部函数
-        # 但如果是一个外部函数,这个函数必须是阻塞的而且运行时间短的
+        # 但如果是一个外部函数,这个函数必须是非阻塞的而且运行时间短
         # 否则会影响整个main loop
 
-        # 所以这个cb尽量不要传函数而是传绿色线程的switch过来
+        # 所以这个cb尽量不要传函数而是传绿色线程的switch或event
         self.tpl = cb, args, kw
         # 当前定时器是否被调用过
         self.called = False
@@ -103,7 +107,7 @@ class Timer(object):
                 # cb(*args, **kw)相当于
                 # 执行的switch(*args, **kw)
 
-                # 否则就是执行具体的外部函数
+                # 否则就是执行具体的外部函数或event
                 cb(*args, **kw)
             finally:
                 try:
@@ -140,13 +144,13 @@ class FdListener(object):
     # 有greenlet和对应的fd
     # cb是外部传入的通知函数
 
-    # cb是绿色线程的的switch,用于跳转回原来的绿色线程
-    # 在trampoline函数中,传入的是greenlet.getcurrent().switch
+    # cb如果是绿色线程的的switch,用于跳转回原来的绿色线程
+    # 外部一般用trampoline生成FdListener实例
+    # 在trampoline函数中,传入的cb是greenlet.getcurrent().switch
     # 也就说和self.greenlet.switch相同
-
     # cb也有可能是一个event函数,比价少见,zmq的封装里有用event
-
-    # tb就是绿色线程的throw
+    # cb最好不要是一个外部的函数,参考timer的cb说明
+    # tb就是绿色线程的throw,一般是出现异常后执行的函数
 
     def __init__(self, evtype, fileno, cb, tb, mark_as_closed):
         assert (evtype is READ or evtype is WRITE)
@@ -164,6 +168,8 @@ class FdListener(object):
     __str__ = __repr__
 
     def defang(self):
+        # cb重定向到closed_callback
+        # 这个defang的不在本篇中说明
         self.cb = closed_callback
         if self.mark_as_closed is not None:
             self.mark_as_closed()
@@ -172,10 +178,31 @@ class FdListener(object):
 
 现在可以来看Hub类了
 
+```text
+[GCC 4.4.7 20120313 (Red Hat 4.4.7-17)] on linux2
+Type "help", "copyright", "credits" or "license" for more information.
+>>> import eventlet
+>>> from eventlet.support import greenlets as greenlet
+>>> hub = eventlet.hubs.get_hub()
+>>> current = greenlet.getcurrent()
+>>> current.switch()
+()
+>>> print current
+<greenlet.greenlet object at 0x7fc3fc805f50>
+>>> print hub.greenlet
+<greenlet.greenlet object at 0x7fc3f0d87f50>
+>>> print hub.greenlet.parent
+<greenlet.greenlet object at 0x7fc3fc805f50>
+>>> print hub.greenlet.dead
+False
+>>> 
+
+```
+
 
 ```python
 
-# noop是一个默认的fd listener类
+# noop是一个默认的fd listener类(单例)
 # 监听fd为0, 用来当默认值防止循环报错的,后面wait里用到
 noop = FdListener(READ, 0, lambda x: None, lambda x: None, None)
 
@@ -202,6 +229,11 @@ class Hub(object):
         # 前面我们说了 hub是线程中唯一的(线程中的单例)
         # 所以这个greenlet就是main greenlet,用于跑main loop,也就是self.run
         # 所有greenthread.spawn*函数孵化的绿色线程的parent都是这个greenlet
+
+        # main loop的绿色线程的parent也就是
+        # get_hubs().greenlet.parent具体哪里来的看c源码才知道
+        # 只知道这个绿色线程不能在一开始就调用get_hubs().switch
+        # 因为main loop的绿色线程一开始是dead状态的
         self.greenlet = greenlet.greenlet(self.run)
         self.stopping = False
         self.running = False
@@ -334,12 +366,14 @@ class Hub(object):
         else:
             bucket[fileno] = listener
         # 下面是epoll多出来的,epoll注册监听
+        # 可以看到每次调用Hub.add都会调用epoll的注册fd
         try:
             if not oldlisteners:
                 self.register(fileno, new=True)
             else:
                 self.register(fileno, new=False)
         except IOError as ex:    # ignore EEXIST, #80
+            # 忽略fd已经注册过的错误
             if get_errno(ex) != errno.EEXIST:
                 raise
         return listener
@@ -389,6 +423,7 @@ class Hub(object):
     def ensure_greenlet(self):
         # hub的绿色线程挂了
         # 也就是main loop所在线程挂了
+        # 刚开始Hub的main loop是dead的
         if self.greenlet.dead:
             # 重新开一个绿色线程
             new = greenlet.greenlet(self.run, self.greenlet.parent)
@@ -729,15 +764,37 @@ while not self.stopping:
 ```
 
 
-Hup的main loop里主要的工作
+Hup的main loop里主要的工作1:fire_timers,处理定时器
 
-    1、处理定时器,定时器到点就调用timer中的cb
-    2、处理完定时器后,检查self.listeners字典
-       如果里面有内容,就调用epoll扫描字典中的fd
-       如果fd中有事件，切换到fd相关的绿色线程
+    定时器到点就调用timer中的cb
+    定时器的添加一般通过Hub.schedule_call_global
+    一般来说你的函数执行过程中要等待另外一个函数执行完
+    就通过eventlet.greenthread.sleep添加定时器并切换到其他绿色线程
 
-    定时器的添加一般通过Hub.schedule_call_global生成
+我们来看看sleep的实现
+
+```python
+def sleep(seconds=0):
+    hub = hubs.get_hub()
+    current = getcurrent()
+    assert hub.greenlet is not current, 'do not call blocking functions from the mainloop'
+    timer = hub.schedule_call_global(seconds, current.switch)
+    try:
+        hub.switch()
+    finally:
+        # 切换回来的时候删除添加的timer
+        timer.cancel()
+```
+
+Hup的main loop里主要的工作2:wait,通过epoll处理fd事件
+
+    处理完定时器后,检查self.listeners字典
+    如果里面有内容,就调用epoll扫描字典中的fd
+    如果fd中有事件，切换到fd相关的绿色线程
     listeners的添加一般通过Hub.add或者封装过的trampoline函数
-    monkey patch后的socket.socket等被替换,执行诸如socket.recv之类的函数最终会根据情况调用trampoline
 
-到这里,我们就大致的理解了eventlet的Hub工作原理了,eventlet也就明白了一半,下面就要看[eventlet中event的工作原理]()
+    monkey patch后的原生socket.socket等被替换
+    执行诸如socket.recv之类的函数最终会根据情况调用trampoline
+    所以openstack可以在不修改pika、wsgify的socket数据处理部分代码的情况下绿化它们
+
+到这里,我们就大致的理解了eventlet的Hub工作原理了,eventlet也就明白了一半,再深入就要看[eventlet中event的工作原理](http://www.lolizeppelin.com/2017/03/14/python-eventlet-event/)

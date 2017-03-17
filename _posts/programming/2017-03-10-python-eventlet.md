@@ -262,6 +262,9 @@ class GreenThread(greenlet.greenlet):
             self._resolve_links()
 
     def wait(self):
+        # 我们在GreenThread里找不到wait的调用
+        # 所以wait是外部调用的
+        # GreenThread的wait最终是调用
         return self._exit_event.wait()
 
     def link(self, func, *curried_args, **curried_kwargs):
@@ -305,4 +308,278 @@ class GreenThread(greenlet.greenlet):
             # 重新设置_resolving_links
             self._resolving_links = False
 
+```
+
+到这里出现了event类,我们看看event类在干什么,参考[eventlet中event的工作原理](http://www.lolizeppelin.com/2017/03/14/python-eventlet-event/)
+
+学习完event,我们再回头看GreenThread
+
+```python
+class GreenThread(greenlet.greenlet):
+    ....
+
+    def main(self, function, args, kwargs):
+        try:
+            result = function(*args, **kwargs)
+        except:
+            # function执行报错,调用send_exception让绿色线程throw出异常
+            self._exit_event.send_exception(*sys.exc_info())
+            self._resolve_links()
+            raise
+        else:
+            # function执行成功,调用send
+            # send最终通过switch接收result
+            self._exit_event.send(result)
+            self._resolve_links()
+
+    def wait(self):
+        # 由此可见
+        # 外部调用GreenThread.wait的时候
+        # 其实是在获取function执行完毕的返回值
+        # 如果还没有执行完将切换到其他绿色线程
+        # 直至其他绿色线程再切换过来
+        # 这时候的返回值不再是Event._result
+        # 而是其他线程调用switch的返回值
+        # 实际上_exit_event.send也是用switch来发送返回值的
+        return self._exit_event.wait()
+
+
+class Event(object):
+    .....
+
+    def send(self, result=None, exc=None):
+        assert self._result is NOT_USED, 'Trying to re-send() an already-triggered event.'
+        self._result = result
+        if exc is not None and not isinstance(exc, tuple):
+            exc = (exc, )
+        self._exc = exc
+        hub = hubs.get_hub()
+        for waiter in self._waiters:
+            # 再绕了一次没有直接waiter.switch
+            # 而是先丢到Hub的定时器里
+            hub.schedule_call_global(
+                0, self._do_send, self._result, self._exc, waiter)
+
+    def _do_send(self, result, exc, waiter):
+        if waiter in self._waiters:
+            # 可以看出send也使用switch来发送返回值的
+            if exc is None:
+                waiter.switch(result)
+            else:
+                waiter.throw(*exc)
+
+    def wait(self):
+        current = greenlet.getcurrent()
+        if self._result is NOT_USED:
+            # 这里相当于注册等待返回值的绿色线程
+            # _waiters的设计可以看出event是可以给多个绿色线程公用的
+            # Event里多个_waiters作用在于启动多个绿色线程只需要一个返回的情况
+            # GreenThread是每个实例一个event实例
+            # 没有多绿色线程公用一个event的代码
+            # 所以多_waiters的设计和GreenThread类无关
+            # 需要自己设计使用多_waiters的代码
+            self._waiters.add(current)
+            try:
+                # 直接切换到main loop
+                # 其他绿色线程switch来的时候带上返回值
+                # 其实send里也是通过switch来发送返回值的
+                # 这里其实就是wait到send最终调用switch参数
+                return hubs.get_hub().switch()
+            finally:
+                 self._waiters.discard(current)
+        if self._exc is not None:
+            current.throw(*self._exc)
+        # 已经有返回值了,直接返回
+        return self._result               
+```
+
+现在我们可以看GreenPool了
+
+
+```python
+class GreenPool(object):
+    # 省略部分不常用的代码
+
+    def __init__(self, size=1000):
+        # 最大绿色线程数量
+        self.size = size
+        # 用于存放调用过spawn的绿色线程
+        self.coroutines_running = set()
+        # 和size有关的,后面也专门分析下这个类
+        self.sem = semaphore.Semaphore(size)
+        # 用于接收没有spawn的通知类
+        self.no_coros_running = event.Event()
+
+    def resize(self, new_size):
+        size_delta = new_size - self.size
+        self.sem.counter += size_delta
+        self.size = new_size
+
+    def running(self):
+        return len(self.coroutines_running)
+
+    def free(self):
+        return self.sem.counter
+
+    def spawn(self, function, *args, **kwargs):
+        # spawn的if分支我们来看看
+        current = greenthread.getcurrent()
+        # 当GreenPool中没有可用绿色线程的时候(绿色线程数量过多)
+        # 当前绿色线程正好在coroutines_running中
+        # 这个if分支用于GreenPool中的绿色线程调用GreenPool.spawn的情况
+        # 也就是说这个绿色线程已经走过else的部分了
+        # 就不用再添加到定时器里和link函数_spawn_done了
+        if self.sem.locked() and current in self.coroutines_running:
+            # 直接调用GreenThread的main函数
+            # main也就是立刻调用外部函数function
+            gt = greenthread.GreenThread(current)
+            gt.main(function, args, kwargs)
+            return gt
+        else:
+            # 大部分的绿色线程会走到这里
+            # pool中减少可用线程数,如果线程数不足会阻塞在这里
+            self.sem.acquire()
+            # 调用greenthread.spawn函数
+            # 这个函数会把GreenThread的main执行丢到Hub的定时器里
+            # 这样会延迟执行外部函数function
+            gt = greenthread.spawn(function, *args, **kwargs)
+            if not self.coroutines_running:
+                self.no_coros_running = event.Event()
+            self.coroutines_running.add(gt)
+            # 把self._spawn_done注册到gt里
+            # 也就是gt执行完毕后会执行self._spawn_done
+            gt.link(self._spawn_done)
+        return gt
+
+    def _spawn_done(self, coro):
+        # 表示这个绿色线程执行完毕
+        # pool中增加可用数量
+        self.sem.release()
+        # GreenPool.spawn调用link的时候没带参数
+        # 所以这里也不会有
+        if coro is not None:
+            self.coroutines_running.remove(coro)
+        # 线程池为满,没有绿色线程在跑,event里send一个None
+        if self.sem.balance == self.size:
+            self.no_coros_running.send(None)
+
+
+    def waitall(self):
+        """Waits until all greenthreads in the pool are finished working."""
+        assert greenthread.getcurrent() not in self.coroutines_running, \
+            "Calling waitall() from within one of the " \
+            "GreenPool's greenthreads will never terminate."
+        if self.running():
+            self.no_coros_running.wait()
+
+
+    def waiting(self):
+        """Return the number of greenthreads waiting to spawn.
+        """
+        if self.sem.balance < 0:
+            return -self.sem.balance
+        else:
+            return 0
+```
+
+
+
+```python
+class Semaphore(object):
+    def __init__(self, value=1):
+        # counter就是线程池的大小
+        # 线程池里每增加一个绿色线程
+        # counter就减少1
+        self.counter = value
+        if value < 0:
+            raise ValueError("Semaphore must be initialized with a positive "
+                             "number, got %s" % value)
+
+        # 用一个deque存放绿色线程等待队列
+        self._waiters = collections.deque()
+
+    def locked(self):
+        # <=0 也就是线程池满
+        return self.counter <= 0
+
+    def acquire(self, blocking=True, timeout=None):
+        # 可以看出默认是阻塞的
+        if timeout == -1:
+            timeout = None
+        if timeout is not None and timeout < 0:
+            raise ValueError("timeout value must be strictly positive")
+        if not blocking:
+            if timeout is not None:
+                raise ValueError("can't specify timeout for non-blocking acquire")
+            timeout = 0
+        # 非阻塞,线程池满,返回false
+        if not blocking and self.locked():
+            return False
+        current_thread = greenthread.getcurrent()
+        if self.counter <= 0 or self._waiters:
+            # 当前绿色添加到_waiters中
+            # 也就是把超量的绿色线程添加到_waiters里
+            if current_thread not in self._waiters:
+                self._waiters.append(current_thread)
+            try:
+                # 有超时设置
+                if timeout is not None:
+                    ok = False
+                    # timeout时间内不停看counter值
+                    with Timeout(timeout, False):
+                        # 线程池不足可用
+                        while self.counter <= 0:
+                            # 切换到其他绿色线程
+                            hubs.get_hub().switch()
+                        # 走到这里说明没有触发timout,线程池有空闲了
+                        ok = True
+                    # 说明触发了timeout
+                    if not ok:
+                        return False
+                else:
+                    while True:
+                        # 每次从从Hub切换到这里的时候
+                        # 都判断线程池是不是满的
+                        # 一旦有空闲就退出循环
+                        hubs.get_hub().switch()
+                        if self.counter > 0:
+                            break
+            finally:
+                # 前面把当前绿色线程添到了队列里
+                # 现在分配到了自然要移除
+                try:
+                    self._waiters.remove(current_thread)
+                except ValueError:
+                    # Fine if its already been dropped.
+                    pass
+        # 分配到一个counter减1
+        self.counter -= 1
+        return True
+
+    def release(self, blocking=True):
+        # 任意一个绿色线程池完成的时候会调用release
+        # counter增加
+        self.counter += 1
+        # _waiters中还有等待着的绿色线程
+        # 这里可以看出,如果需要acquire不阻塞,也就是设置了timeout
+        # 需要在acquire为False的是后调用eventlet.sleep(0)切换到其他绿色线程
+        # 然后就可以写其他部分代码了
+        # 不过我们一般都是写阻塞形式的代码
+        # 所以_waiters一般都是空
+        if self._waiters:
+            # 添加_do_acquire到定时器里
+            hubs.get_hub().schedule_call_global(0, self._do_acquire)
+        return True
+
+    def _do_acquire(self):
+        # _do_acquire就轮流执行_waiters中待执行的绿色线程
+        if self._waiters and self.counter > 0:
+            waiter = self._waiters.popleft()
+            waiter.switch()
+
+
+    @property
+    def balance(self):
+        # 剩余可用绿色线程数量
+        return self.counter - len(self._waiters)
 ```

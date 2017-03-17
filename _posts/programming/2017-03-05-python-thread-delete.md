@@ -121,3 +121,25 @@ def joinAllDismissedWorkers(self):
         worker._Thread__delete()
         del worker
 ```
+
+经过测试好像无效.....在创建线程的地方捕获下错误
+
+```python
+def createWorkers(self, num_workers, poll_timeout=5):
+     for i in range(num_workers):
+         err_count = 0
+         while True:
+             try:
+                 self.workers.append(WorkerThread(self._requests_queue,
+                                     self._results_queue,
+                                     poll_timeout=poll_timeout))
+                 err_count = 0
+                 break
+             except:
+                 err_count += 1
+                 if err_count>=5:
+                     del self.workers[:]
+                     raise
+                 time.sleep(0.3)
+         time.sleep(0.1)
+```
