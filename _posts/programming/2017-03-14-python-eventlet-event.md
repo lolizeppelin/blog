@@ -48,13 +48,18 @@ class Event(object):
             try:
                 # 先切换到main loop
                 # 切换回来的时候
-                # 把_waiters中的当前绿色线删除(discard方法不报错)
+                # 获取到返回值,返回值是其他绿色线程调用switch的参数
+                # 所谓的其他绿色线程其实就是_do_send里
+                # 调用的waiter.switch(result)
                 return hubs.get_hub().switch()
             finally:
+                # returen前把_waiters中的当前绿色线删除(discard方法不报错)
                 self._waiters.discard(current)
         # 如果self._exc不为空通过绿色线程throw异常
         if self._exc is not None:
             current.throw(*self._exc)
+        # 这里说明已经有返回值了
+        # 也就是已经调用send了
         return self._result
 
     def send_exception(self, *args):
@@ -78,6 +83,8 @@ class Event(object):
         # _waiters中所有绿色线程作为参数
         # 创建多个定时器在main loop中调用
         # 这里绕了一下没有直接调用waiter.switch
+        # 如果send的前没有其他绿色线程调用过wait
+        # _waiters里就是空的
         for waiter in self._waiters:
             hub.schedule_call_global(
                 0, self._do_send, self._result, self._exc, waiter)

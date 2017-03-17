@@ -384,6 +384,7 @@ class Event(object):
                 # 其他绿色线程switch来的时候带上返回值
                 # 其实send里也是通过switch来发送返回值的
                 # 这里其实就是wait到send最终调用switch参数
+                # 这里也就是_do_send里waiter.switch(result)过来的
                 return hubs.get_hub().switch()
             finally:
                  self._waiters.discard(current)
