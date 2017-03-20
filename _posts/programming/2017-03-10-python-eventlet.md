@@ -98,6 +98,9 @@ class greenlet(__builtin__.object)
         这个greenlet将被恢复,如果没有参数输入,switch的返回为None
         如果传入参数为*args,返回tuple
         如果传入参数为**kwargs,返回字典
+        
+        注意:这里的参数是其他绿色线程switch过来的参数
+             不是当前绿色线程switch过去的参数
 
  |      
  |      If the greenlet is dead, or is the current greenlet then this
