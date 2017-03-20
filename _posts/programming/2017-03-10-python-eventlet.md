@@ -336,11 +336,11 @@ class GreenThread(greenlet.greenlet):
         # 由此可见
         # 外部调用GreenThread.wait的时候
         # 其实是在获取function执行完毕的返回值
-        # 如果还没有执行完将切换到其他绿色线程
+        # 如果function还没有执行完将切换到其他绿色线程
         # 直至其他绿色线程再切换过来
-        # 这时候的返回值不再是Event._result
-        # 而是其他线程调用switch的返回值
-        # 实际上_exit_event.send也是用switch来发送返回值的
+        # 这时候的返回值Event._result就是他线程调用send发送的返回值
+        # 实际上_exit_event.send是用switch来发送返回值的
+        # 也就是说Event._result是其他线程switch的时带上的参数
         return self._exit_event.wait()
 
 
@@ -348,6 +348,7 @@ class Event(object):
     .....
 
     def send(self, result=None, exc=None):
+        # 简单来说一个event实例只能调用一次send
         assert self._result is NOT_USED, 'Trying to re-send() an already-triggered event.'
         self._result = result
         if exc is not None and not isinstance(exc, tuple):
@@ -444,6 +445,8 @@ class GreenPool(object):
             # 这个函数会把GreenThread的main执行丢到Hub的定时器里
             # 这样会延迟执行外部函数function
             gt = greenthread.spawn(function, *args, **kwargs)
+            # 这里不是很明白为什么不一开始就初始化no_coros_running
+            # 为event而是先用set来初始化
             if not self.coroutines_running:
                 self.no_coros_running = event.Event()
             self.coroutines_running.add(gt)
@@ -504,7 +507,8 @@ class Semaphore(object):
         return self.counter <= 0
 
     def acquire(self, blocking=True, timeout=None):
-        # 可以看出默认是阻塞的
+        # 可以看出默认是阻塞的,但是这里的阻塞并不是真正的阻塞
+        # 具体看后续说明
         if timeout == -1:
             timeout = None
         if timeout is not None and timeout < 0:
@@ -538,16 +542,21 @@ class Semaphore(object):
                     if not ok:
                         return False
                 else:
+                    # 没有timeout,acquire是阻塞的
                     while True:
                         # 每次从从Hub切换到这里的时候
                         # 都判断线程池是不是满的
                         # 一旦有空闲就退出循环
+                        # 没空闲则又回到主循环里
+                        # 也就是说这里的阻塞是通过不停的切换到主循环实现的
+                        # 并不会卡住代码执行
                         hubs.get_hub().switch()
                         if self.counter > 0:
                             break
             finally:
                 # 前面把当前绿色线程添到了队列里
                 # 现在分配到了自然要移除
+                # 在阻塞形式中self._waiters是没有什么用的
                 try:
                     self._waiters.remove(current_thread)
                 except ValueError:

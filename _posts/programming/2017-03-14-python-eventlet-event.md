@@ -31,15 +31,24 @@ class Event(object):
     def __init__(self):
         # 一个列表用于存放正在等待的绿色线程
         # 这里可以看出这个Event是可能被多个绿色线程调用
-        # 也就是多个绿色线程的函数里传输数据就用event
         self._waiters = set()
         # 初始化self._result、self._exc值
         self.reset()
 
     def wait(self):
-        # 绿色线程GreenThread调用wait的时候会走到这里
+        # 每当绿色线程调用指定wait的时候,_waiters列表中就会添加当前绿色线程
+        # 表明这个绿色线程讲等待event被其他绿色线程调用send
+        # waiter是用于存放等待返回值的绿色线程合集
+        # 多个waiter的情况用于多个绿色线程等待一个返回值
+        # 需要自己编写相应代码
+
+        # 在GreenThread类中,每个GreenThread实例有自己的event
+        # 所以GreenThread中event
+        # 只是用来收发这个GreenThread实例中的function的返回值的
         current = greenlet.getcurrent()
-        # _result还是默认标记
+        # _result还是默认标记,说明send还没有被调用过
+        # 把自己注册到等待返回值的列表中
+        # 也就是添加到self._waiters中
         if self._result is NOT_USED:
             # 把当前绿色线程放入_waiters这个list中
             # 这里看出_waiters的作用了
@@ -58,8 +67,11 @@ class Event(object):
         # 如果self._exc不为空通过绿色线程throw异常
         if self._exc is not None:
             current.throw(*self._exc)
-        # 这里说明已经有返回值了
-        # 也就是已经调用send了
+        # 走到这里说明已经有返回值了
+        # 也就是说有绿色线程注册到event表面要获取返回值
+        # 但是event已经被外部调用过send了
+        # 那么就直接返回返回值即可
+        # 也就不用注册到self._waiters列表里了
         return self._result
 
     def send_exception(self, *args):
@@ -80,11 +92,12 @@ class Event(object):
             exc = (exc, )
         self._exc = exc
         hub = hubs.get_hub()
-        # _waiters中所有绿色线程作为参数
-        # 创建多个定时器在main loop中调用
+        # 如果_waiters为空,那么说明
+        # 还没有有绿色线程注册到event里表示它要获取send的结果
+
+        # 否则,将_waiters中所有绿色线程作为参数
+        # 在Hub里创建多个定时器(最终main loop中调用)来swith到对应绿色线程
         # 这里绕了一下没有直接调用waiter.switch
-        # 如果send的前没有其他绿色线程调用过wait
-        # _waiters里就是空的
         for waiter in self._waiters:
             hub.schedule_call_global(
                 0, self._do_send, self._result, self._exc, waiter)
