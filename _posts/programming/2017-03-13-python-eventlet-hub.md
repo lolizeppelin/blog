@@ -195,7 +195,7 @@ Type "help", "copyright", "credits" or "license" for more information.
 <greenlet.greenlet object at 0x7fc3fc805f50>
 >>> print hub.greenlet.dead
 False
->>> 
+>>>
 
 ```
 
@@ -307,6 +307,7 @@ class Hub(object):
             if event & WRITE_MASK:
                 callbacks.add((writers.get(fileno, noop), fileno))
             if event & select.POLLNVAL:
+                # 出现epoll错误,调用下面的remove_descriptor
                 self.remove_descriptor(fileno)
                 continue
             if event & EXC_MASK:
@@ -350,7 +351,7 @@ class Hub(object):
     def add(self, evtype, fileno, cb, tb, mark_as_closed):
         oldlisteners = bool(self.listeners[READ].get(fileno) or
                             self.listeners[WRITE].get(fileno))
-        # 这个代码用每次有socket调用accept、connect、recv、send等函数时
+        # 这个代码用每次有socket调用accept、connect、send等函数时
         # 最终都会触发这个Hub.add函数
         # 这个函数会通过fd和绿色线程生成FdListener实例
         # 并添加到self.listeners字典中
@@ -398,9 +399,10 @@ class Hub(object):
 
     def remove_descriptor(self, fileno):
         # 用注销fd监听,
-        # hub中从self.listeners弹出fd
-        # 再切换到fd监听的绿色线程做对应清理工作
-        # 由内部catch的函数调用
+        # hub中从self.listeners弹出fd对应的listener
+        # 陆续切换到listener对应的绿色线程
+        # remove_descriptor在wait中有调用
+        # 看上最好由内部调用
         listeners = []
         listeners.append(self.listeners[READ].pop(fileno, noop))
         listeners.append(self.listeners[WRITE].pop(fileno, noop))
@@ -611,6 +613,9 @@ class Hub(object):
 def trampoline(fd, read=None, write=None, timeout=None,
                timeout_exc=timeout.Timeout,
                mark_as_closed=None):
+    # trampoline是一次性的
+    # 从main loop切换回来的时候会注销之前的监听
+    # 所以recv等需要自己调用Hub.add而不是用trampoline
     t = None
     hub = get_hub()
     current = greenlet.getcurrent()
@@ -655,6 +660,7 @@ def trampoline(fd, read=None, write=None, timeout=None,
             # 这里的返回值也没什么用
             return hub.switch()
         finally:
+            # 这里看到这个listener对象是一次性的
             hub.remove(listener)
     finally:
         if t is not None:
@@ -688,11 +694,11 @@ class GreenSocket(object):
         fd = self.fd
         # 使用非阻塞socket的时候
         # 调用self.fd.recv
-        # 也就是直接调用socket.recv
+        # 也就是直接调用原生socket.recv
         # 没有绿色线程什么事
         if self.act_non_blocking:
             return recv_meth(*args)
-        # 非阻塞的recv走这里
+        # 阻塞的recv走这里
         while True:
             try:
                 # recv: bufsize=0?
@@ -703,16 +709,22 @@ class GreenSocket(object):
                 # does not raise a timeout exception. Since we're simulating
                 # a blocking socket here we need to produce a timeout exception
                 # if needed, hence the call to trampoline.
-                # 因为说明就不翻译了
-                # 这里的判断可以看出!!!!设置了recv的长度,会不走绿色线程!!!
+                # 说明部分就不翻译了
+                # 这里的判断可以看出!!!!阻塞情况下有recv的长度,是会不走绿色线程!!!
+                # 也就是说阻塞的情况下
+                # recv的第一个参数必须是0才走绿色线程
+                # 但是直接recv(0)的写法又是有问题的
+                # 所以,正确的socket.recv写法是
+                # 1、常规方式,自己用epoll之类写socket.recv的异步
+                # 2、connect的时候调用Hub.add添加监听
+                # 然后在recv前切换到main loop
+                # 切换之前要能让Hub.add的cb函数能切换到recv所在绿色线程
                 if not args[0]:
                     # 这里是封装了的trampoline函数
                     # 这里走完表示epoll在当前fd有事件
                     # 从main loop回到当前绿色线程
                     self._read_trampoline()
-                # 因为是有epoll事件的,所以这里自然不会阻塞
-                # 但这里的recv时间太长会影响整个循环
-                # 不过socket.recv的时间应该不会太长
+                # 走这里会阻塞！！！
                 return recv_meth(*args)
             except socket.error as e:
                 # 这个错误是connect还没建立完成就recv的错误
@@ -764,7 +776,7 @@ while not self.stopping:
 ```
 
 
-Hup的main loop里主要的工作1:fire_timers,处理定时器
+Hup的main loop里主要的工作1:fire_timers————处理定时器
 
     定时器到点就调用timer中的cb
     定时器的添加一般通过Hub.schedule_call_global
@@ -786,15 +798,16 @@ def sleep(seconds=0):
         timer.cancel()
 ```
 
-Hup的main loop里主要的工作2:wait,通过epoll处理fd事件
+Hup的main loop里主要的工作2:wait————通过epoll处理fd事件
 
     处理完定时器后,检查self.listeners字典
     如果里面有内容,就调用epoll扫描字典中的fd
-    如果fd中有事件，切换到fd相关的绿色线程
+    如果fd中有事件，切换到fd相关的绿色线程(这个是常规行为,实际是调用Hub.add传入的cb)
     listeners的添加一般通过Hub.add或者封装过的trampoline函数
 
     monkey patch后的原生socket.socket等被替换
-    执行诸如socket.recv之类的函数最终会根据情况调用trampoline
+    执行诸如socket.connect之类的函数最终会根据情况调用trampoline
     所以openstack可以在不修改pika、wsgify的socket数据处理部分代码的情况下绿化它们
+    注意,正常情况下recv不会被自动绿化,具体参考GreenSocket的recv_loop中说明
 
 到这里,我们就大致的理解了eventlet的Hub工作原理了,eventlet也就明白了一半,再深入就要看[eventlet中event的工作原理](http://www.lolizeppelin.com/2017/03/14/python-eventlet-event/)
