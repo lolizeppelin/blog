@@ -16,7 +16,7 @@ neutron ml(openvswitch) agent初始化并创建br的过程
 
 ---
 
-    agent守护进程的init
+agent守护进程的init
 
 ```python
 class OVSNeutronAgent(sg_rpc.SecurityGroupAgentRpcCallbackMixin,
@@ -55,10 +55,9 @@ class OVSNeutronAgent(sg_rpc.SecurityGroupAgentRpcCallbackMixin,
 
 
 
-
 ---
 
-    下面是是br_int的初始化
+下面是是br_int的初始化
 
 ```python
 def setup_integration_br(self):
@@ -86,7 +85,7 @@ def setup_integration_br(self):
 
 ---
 
-    下面是br_tun的初始化
+下面是br_tun的初始化
 
 ```python
 def setup_tunnel_br(self, tun_br_name=None):
@@ -105,10 +104,11 @@ def setup_tunnel_br(self, tun_br_name=None):
     # 就目前代码来看,tun_br没有外链到具体物理网卡的过程
     # 所以,应该是在系统层面设置好br_tun和并链接到物理网卡
     # neutron只会重新设置br_tun的datapath_type
-    # (注意,当时的上面关于br_tun的理解是错的,br_tun和br_ex不一样,不要在系统层设置好br-tun)
     # 这里的处理方式和setup_physical_bridges是一样的
     # 都是在neutron外部管理br和物理网卡的关联
     # 只有br_int是完全由neutron agent管理的
+    # (注意,当时的上面关于br_tun的理解是错的,br_tun和br_ex不一样,
+    # 不要在系统层设置好br-tun, br-tun和br-int一样完全由openstack管理)
     self.tun_br.create(secure_mode=True)
     self.tun_br.setup_controllers(self.conf)
     # 在br_int和br_tun上创建br_int和bt_tun相连的端口
@@ -137,7 +137,7 @@ def setup_tunnel_br(self, tun_br_name=None):
 
 ---
 
-    下面是root的启动函数
+下面是root的启动函数
 
 ```python
 def daemon_loop(self):

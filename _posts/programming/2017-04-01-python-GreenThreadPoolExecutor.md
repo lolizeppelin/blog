@@ -7,6 +7,9 @@ tag: ["python", "linux"]
 ---
 
 
+占坑用,待续
+
+
 oepnstack的MessageHandlingServer中使用了GreenThreadPoolExecutor
 
 这玩意回合了yeid和eventlet,网上相关文档很少,直接把源码读了,源码再下面两个包中

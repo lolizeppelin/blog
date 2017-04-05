@@ -1,6 +1,6 @@
 ---
 layout: post
-title:  "OpenStack Mitaka从零开始 openstack里的AMPQ使用(1)"
+title:  "OpenStack Mitaka从零开始 openstack里的AMQP使用(1)"
 date:   2017-04-01 12:50:00 +0800
 categories: "虚拟化"
 tag: ["openstack", "python"]
@@ -61,11 +61,10 @@ class Service(service.Service):
     def start(self):
         # 这行没用
         super(Service, self).start()
-        # 创建一个connection对象,注意这个Connection对象不是pika的Connection
+        # 创建一个connection对象,注意这个Connection对象不是rabbit的Connection
         self.conn = create_connection()
         LOG.debug("Creating Consumer connection for Service %s",
                   self.topic)
-
         endpoints = [self.manager]
         # 作为endpoints传入给create_consumer
         # 当接收到消息队列数据的时候,最终调用endponrt中的函数
@@ -80,11 +79,11 @@ class Service(service.Service):
         # 也就是调用MessageHandlingServer的start函数
         self.conn.consume_in_threads()
 
-# 这个就是create_connection返回的Connection对象的类
+# 这个就是create_connection()函数返回的Connection对象的类
 class Connection(object):
     def __init__(self):
         super(Connection, self).__init__()
-        # 可以看出这个Connection用于存放多个消息队列服务器
+        # 可以看出这个Connection用于存放多个rpc server
         self.servers = []
 
     def create_consumer(self, topic, endpoints, fanout=False):
@@ -95,8 +94,8 @@ class Connection(object):
             topic=topic, server=cfg.CONF.host, fanout=fanout)
         # 每次调用create_consumer都会生成一个server
         # 这个server是MessageHandlingServer的实例
-        # 这个server也就是rpc server, 就是一个基于ampq的rpc server
-        # rpc server的作用是从ampq收到消息
+        # 这个server也就是rpc server, 就是一个基于amqp的rpc server
+        # rpc server的作用是从amqp收到消息
         # 调用endpoints执行具体的函数并返回
         # rpc server通过target和endpoints生成
         server = get_server(target, endpoints)
@@ -166,7 +165,7 @@ def get_server(target, endpoints, serializer=None):
 def get_rpc_server(transport, target, endpoints,
                 executor='blocking', serializer=None):
      """Construct an RPC server.
-     从ampq到来的消息如何被接收和分发由executor来控制,最简单的executor是阻塞模式
+     从amqp到来的消息如何被接收和分发由executor来控制,最简单的executor是阻塞模式
      如果使用eventlet作为executor,threading和time模块必须被monkeypatch过(默认使用eventlet)
 
      :param transport: the messaging transport
@@ -228,7 +227,7 @@ def get_transport(conf, url=None, allowed_remote_exmods=None, aliases=None):
 
     return Transport(mgr.driver)
 
-
+AMQP
 class Transport(object):
     # 代码可以看出Transport是直接封装了rabbit驱动的调用
     # 也就是信息的收发通过Transport
@@ -288,4 +287,4 @@ class Transport(object):
 ```
 
 
-RPCDispatcher比较复杂,我们在[下一节](http://www.lolizeppelin.com/2017/04/01/openstack-AMPQ-2/)接着讲
+RPCDispatcher比较复杂,我们在[下一节](http://www.lolizeppelin.com/2017/04/01/openstack-AMQP-2/)接着讲

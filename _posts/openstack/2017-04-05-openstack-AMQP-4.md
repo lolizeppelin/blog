@@ -1,6 +1,6 @@
 ---
 layout: post
-title:  "OpenStack Mitaka从零开始 openstack里的AMPQ使用(4)"
+title:  "OpenStack Mitaka从零开始 openstack里的AMQP使用(4)"
 date:   2017-04-05 12:50:00 +0800
 categories: "虚拟化"
 tag: ["openstack", "python"]
@@ -14,7 +14,7 @@ tag: ["openstack", "python"]
 
 ```python
 
-# MessageHandlingServer是通过如下方式获取到ampq过来的消息
+# MessageHandlingServer是通过如下方式获取到amqp过来的消息
 incoming = self.listener.poll(
     timeout=self.dispatcher.batch_timeout,
     prefetch_size=self.dispatcher.batch_size)
@@ -44,7 +44,8 @@ class RabbitDriver(amqpdriver.AMQPDriverBase):
         # 这个和rabbit的qos有关
         self.prefetch_size = (
             conf.oslo_messaging_rabbit.rabbit_qos_prefetch_count)
-        # 连接池对象, Connection参数是一个class,connection_pool
+        # 连接池对象, Connection参数是一个class
+        # 在这里是oslo_messaging._drivers.impl_rabbit.Connection
         # rpc_conn_pool_size是连接池大小
         connection_pool = pool.ConnectionPool(
             conf, conf.oslo_messaging_rabbit.rpc_conn_pool_size,
@@ -64,6 +65,7 @@ class RabbitDriver(amqpdriver.AMQPDriverBase):
 class ConnectionPool(Pool):
     """Class that implements a Pool of Connections."""
     def __init__(self, conf, rpc_conn_pool_size, url, connection_cls):
+        # connection_cls就是oslo_messaging._drivers.impl_rabbit.Connection
         self.connection_cls = connection_cls
         self.conf = conf
         self.url = url
@@ -138,7 +140,7 @@ class ConnectionContext:
         # 也就是# oslo_messaging._drivers.impl_rabbit.Connection的实例
         # 所以ConnectionContext相当于把connction的封装成有上下文对象的实力
         # 这样可以使用with语法,结束的是后自动调用done
-        # self.connction比较复杂,是pika相关的封装,需要专门一节和pika等一起讲
+        # self.connction比较复杂,是amqp相关的封装,需要专门一节和amqp等一起讲
         # send型调用get返回connection实例
         if pooled:
             self.connection = connection_pool.get()
@@ -175,9 +177,13 @@ class ConnectionContext:
                     self.connection = self.connection_pool.create()
                 finally:
                     self.connection_pool.put(self.connection)
-            # 监听型直接关闭
+            # 监听型
             else:
                 try:
+                    # 这里并没有真正关闭链接
+                    # 这里只是调用了connection的close()方法
+                    # 而connection.close()并不关闭链接
+                    # 具体看下一节
                     self.connection.close()
                 except Exception:
                     pass
@@ -291,7 +297,7 @@ def batch_poll_helper(func):
         return incomings
     return wrapper
 
-
+# pool的incoming就是AMQPIncomingMessage实例
 class AMQPIncomingMessage(base.RpcIncomingMessage):
 
     def __init__(self, listener, ctxt, message, unique_id, msg_id, reply_q,
@@ -389,6 +395,8 @@ class AMQPIncomingMessage(base.RpcIncomingMessage):
                       'reply_q': self.reply_q,
                       'elapsed': self.stopwatch.elapsed()})
         # 最终调用conn.direct_send,将落地操作返回值发送出去
+        # reply_q是message的ctxt的reply_q方法
+        # 那么这里其实就是从哪里来,发回给哪
         conn.direct_send(self.reply_q, rpc_common.serialize_msg(msg))
 
     def acknowledge(self):

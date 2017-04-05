@@ -10,6 +10,8 @@ tag: ["openstack", "python"]
 {:toc}
 
 
+占坑用,待续
+
 ## 基础OpenStack Mitaka部署配置过程
 
 因为是要部署的不是一个存粹的测试环境、而是一套可用的私有云环境，同时为了更好的学习虚拟化网络,所以网络选择ovs、dvr和vxlan.当然openstack也选择了支持domain的版本(类似公有云中账号内可以创建项目并实现项目隔离)
@@ -46,20 +48,23 @@ tag: ["openstack", "python"]
     路由(route),   由domain中的user创建,一般用于让内网IP转发到外网IP上
 
     在同一个网络(network)中就相当于在同一个交换机中,这个交换机中可以有多个网段不同的子网在上面跑
-    不同的subnet互通需要通过route
+    不同的subnet不能直接互通
 
     有点歧义的是,虚拟机创建的是后选择网络的时候是直接选择network,并不能选择network再选择subnet
-    所以,当所选的network下有多个subnet的时候,虚拟机实例究竟用的是哪个subnet就得看代码了,这部分待续
+    所以,当所选的network下有多个subnet的时候,虚拟机实例究竟用的是哪个subnet可以看
+    nova通过neutron分配网络的过程(3)
 
     内网和外网都是通过相同的方式创建,不同之处在于
     外网的网络(network)需要由cloud admin(openstack的最高管理员)创建,创建的时候勾选外部网络、共享
-    然后再创建外部网络所能使用的子网并定义IP段(公网IP地址池)、这里的网关就是外部的路由器了
+    然后再创建外部网络所能使用的子网并定义IP段(公网IP地址池)
+    外部网络的subnet的网关就是外部的路由器,subnet也的中包含的子网都是运营商分配的IP
+    当然自己测试的时候,一个内网当成外网就可以了
 
     虚拟机创建的时候一般都只选择由自己创建的network,也就是只有内网IP
     需要外网IP的虚拟机需要通过创建浮动IP，然后绑定到对应虚拟机上
     具体实现比较复杂,等到对openstack比较熟悉以后
     可以参考http://www.lolizeppelin.com/2017/02/05/neutron-wan-route/
-    我们暂时理解为虚拟机只有内网
+    我们暂时理解为正常情况下创建虚拟机只选择内网就可以了
 
 ##### openstack所用的网络分为(下面所说的外网不一定真要外网地址、交换机上vlan划分一个和办公网络平行的网络就可以了)
 
@@ -69,37 +74,39 @@ tag: ["openstack", "python"]
 
     数据网络: 这部分网络最复杂,在熟悉之前简单理解为br-tun的网络出口
              一般也要对应一个独立网卡,一定有一个IP地址
+             这个网络承载了宿主机中所有虚拟机的内网数据流量
 
     内部网络：这部分就是openstack通信用的网络,用于链接消息通信服务器、openstack数据库
              各个openstack组件间相互通信，建议使用独立网卡,当然有IP地址
+             镜像传输和热迁移的时候,走的网络是内部网络,流量也不小
 
     管理网络：这个网络就是相当于登陆管理openstack的的网络,需要能联通外网
-             也建议独立网卡
+             可以用独立独立网卡独立网络、也可以直接在br-ex上配置IP
 
     我们keyston创建endpoint有三种internal、public、admin
-    public对应的就是就是管理网络,需要外网可以访问(浏览器需要和管理网络通信)
+    public对应的就是就是管理网络,需要外网可以访问(客户端浏览器需要和管理网络通信)
     internal对应的就是内部网络,这部分的endpoint是openstack各个组件通信时走的网络
-    admin其实也是内部网络,其实和internal是一样的,在internal url的不同端口上而已
-    本文用到的组件也只有keystone分为public/internal/admin(和internal的endpoint端口不同)
+    admin其实也是走内部网络,其实和internal是一样的,在internal url的不同端口上而已
+    本文用到的组件只有keystone分为public/internal/admin(和internal的endpoint端口不同)
     其他组件的internal/admin是同一个地址、或者说根本没有用到internal地址
 
-    如果没有那么多网卡的话,一般在在br-ex上配置ip,让br-ex兼职管理网络
+    如果没有那么多网卡的话,直接在br-ex上配置ip,让br-ex兼职管理网络的网卡
 
 ---
 
 ##### 看完上面我们,机器需要多少张网卡就比较明确了
 
-    最少：1张  除非你非常熟悉openstack网络,否则不要只用一张网卡
+    最少：1张         除非你非常熟悉openstack网络,否则不要只用一张网卡
     实在没办法： 2张   数据网络、内部网络用同一张网卡(ip建议用2个便于理解)
                       管理网络和外部网络共用一张网卡(一个ip)
-    推举： 3张        数据网络1张、内部网络一张、管理网络和外部网络共用一张网卡(一个ip)
-    推荐： 4张        每个网络一张网卡
+    推举： 3张         数据网络1张、内部网络一张、管理网络和外部网络共用一张网卡(一个ip)
+    推荐： 4张         每个网络一张网卡
     顺便说下,1000M的双口intel网卡100块,100M的更便宜,这点钱都愿花就别学了
 
 ##### 需要多少个交换机（和网卡数量对应,如果交换机可以按端口隔离vlan的话,每个vlan算多一个交换机）
 
     最少：1台     所有网段都混在一个交换机里,除非你已经很熟悉openstack的网络(如果你很熟悉也基本不用看这篇文了)
-    推荐: 3台     openstack的 消息通信/数据库的走一台    openstack数据网络一台   openstack外部网络一台
+    推荐: 3台     openstack的 消息通信/数据库的走一台    openstack数据网络一台   openstack外部网络/管理网络一台
     最好: 4台     管理网络单独加一台(这种情况下访问openstack的浏览器也在这个网络上)
 
 
@@ -114,7 +121,7 @@ tag: ["openstack", "python"]
 
 一套基础的openstack包含以下组件
 
-    控制节点部分
+    控制节点部分（控制节点可以都在一台机器上,也可以分开多台）
     keystone
     nova-api(os-compute-api和metadata-api)
     nova-conductor
@@ -130,13 +137,10 @@ tag: ["openstack", "python"]
     neutron-l3-agent
     neutron-metadata-agent
     nova-novncproxy
-    neutron-dhcp-agent.service
+    neutron-dhcp-agent
 
     因为cinder是非必要部件、布署cinder需要较大的磁盘空间
     需要学习Ceph分布式文件系统,所以我们暂时不接触这个组件
 
     因为使用dvr我们每个计算节点都是网络节点,单独的网络节点不是必要的
     单独的网络节点一般专门跑dvr-snat
-
-
-待续,在读选择网络部分,确认选择网络后是如何自动选取子网的,读完再继续

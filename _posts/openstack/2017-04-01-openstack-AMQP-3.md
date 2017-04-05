@@ -1,6 +1,6 @@
 ---
 layout: post
-title:  "OpenStack Mitaka从零开始 openstack里的AMPQ使用(3)"
+title:  "OpenStack Mitaka从零开始 openstack里的AMQP使用(3)"
 date:   2017-04-01 12:50:00 +0800
 categories: "虚拟化"
 tag: ["openstack", "python"]
@@ -130,4 +130,4 @@ class MessageHandlingServer(service.ServiceBase, _OrderedTaskRunner):
 ```
 
 
-incoming的结构和,请看[下一节](http://www.lolizeppelin.com/2017/04/05/openstack-AMPQ-4/)
+incoming的结构和,请看[下一节](http://www.lolizeppelin.com/2017/04/05/openstack-AMQP-4/)

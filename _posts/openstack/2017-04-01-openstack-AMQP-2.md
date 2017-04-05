@@ -1,6 +1,6 @@
 ---
 layout: post
-title:  "OpenStack Mitaka从零开始 openstack里的AMPQ使用(2)"
+title:  "OpenStack Mitaka从零开始 openstack里的AMQP使用(2)"
 date:   2017-04-01 12:50:00 +0800
 categories: "虚拟化"
 tag: ["openstack", "python"]
@@ -53,8 +53,8 @@ class RPCDispatcher(dispatcher.DispatcherBase):
     of the methods exposed by that object. All public methods on an endpoint
     object are remotely invokable by clients.
     能理解RPC信息的消息分发器
-    MessageHandlingServer是用过一个callable的dispatcher来构建的的
-    每当有消息过来的时候dispatcher就被调用,调用的他的参数中包含的数据有context和消息字典
+    MessageHandlingServer通过一个callable的dispatcher来构建的的
+    每当有消息过来的时候dispatcher就被调用,调用的他的参数中包含的数据包含有context和消息字典
 
     RPCDispatcher就是一个能理解RPC消息的分发器
     分发器监听消息中的namespace, version and method值
@@ -227,4 +227,4 @@ class DispatcherExecutorContext(object):
 
 ```
 
-现在剩下的问题是,MessageHandlingServe和incoming的结构和,请看[下一节](http://www.lolizeppelin.com/2017/04/01/openstack-AMPQ-3/)
+现在剩下的问题是,MessageHandlingServe和incoming的结构和,请看[下一节](http://www.lolizeppelin.com/2017/04/01/openstack-AMQP-3/)
