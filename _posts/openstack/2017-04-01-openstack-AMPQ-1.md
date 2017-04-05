@@ -94,10 +94,11 @@ class Connection(object):
         target = oslo_messaging.Target(
             topic=topic, server=cfg.CONF.host, fanout=fanout)
         # 每次调用create_consumer都会生成一个server
-        # 这个server是MessageHandlingServer
-        # 也就是rpc server, 就是一个基于ampq的rpc server
-        # rpc server从ampq收到消息,调用endpoints执行继续的函数
-        # server通过target和endpoints生成
+        # 这个server是MessageHandlingServer的实例
+        # 这个server也就是rpc server, 就是一个基于ampq的rpc server
+        # rpc server的作用是从ampq收到消息
+        # 调用endpoints执行具体的函数并返回
+        # rpc server通过target和endpoints生成
         server = get_server(target, endpoints)
         self.servers.append(server)
 
@@ -112,14 +113,14 @@ class Connection(object):
         for server in self.servers:
             server.wait()
 
-# 这个就是Target类
+# 我们来看看生成rpc server的Target类
 class Target(object):
     def __init__(self, exchange=None, topic=None, namespace=None,
                  version=None, server=None, fanout=None,
                  legacy_namespaces=None):
         # 从属性可以看出Target相当于一份配置文件
         # -----------------
-        # 当Target的使用者是server的时候
+        # 当Target的使用者是server(这里的server表示服务端的意思)的时候
         # topic和server是必要属性
         # exchange可选属性
         # -----------------
@@ -287,4 +288,4 @@ class Transport(object):
 ```
 
 
-RPCDispatcher比较复杂,我们在下一节接着讲
+RPCDispatcher比较复杂,我们在[下一节](http://www.lolizeppelin.com/2017/04/01/openstack-AMPQ-2/)接着讲

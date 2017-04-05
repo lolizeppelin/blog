@@ -10,7 +10,7 @@ tag: ["openstack", "python"]
 {:toc}
 
 
-我们先看MessageHandlingServer类,也就是RPC server,incoming的放下一节
+我们先看MessageHandlingServer类,也就是RPC server,服务原型是l3-agent
 
 ```python
 
@@ -41,10 +41,6 @@ class MessageHandlingServer(service.ServiceBase, _OrderedTaskRunner):
         self._poll_executor = None
         self._started = False
         super(MessageHandlingServer, self).__init__()
-
-    def _submit_work(self, callback):
-        fut = self._work_executor.submit(callback.run)
-        fut.add_done_callback(lambda f: callback.done())
 
     @ordered(reset_after='stop')
     def start(self, override_pool_size=None):
@@ -105,6 +101,11 @@ class MessageHandlingServer(service.ServiceBase, _OrderedTaskRunner):
                 timeout=self.dispatcher.batch_timeout,
                 prefetch_size=self.dispatcher.batch_size)
             if incoming:
+                # 调用self._submit_work处理
+                # self.dispatcher(incoming)的返回值
+                # self.dispatcher(incoming)也就是
+                # RPCDispatcher.__call__方法调用的位置
+                # 返回值就是DispatcherExecutorContext类实例
                 self._submit_work(self.dispatcher(incoming))
         # 走到这里表示调用过了stop
         # 退出前处理incoming中剩余的数据
@@ -117,5 +118,16 @@ class MessageHandlingServer(service.ServiceBase, _OrderedTaskRunner):
                 self._submit_work(self.dispatcher(incoming))
             else:
                 return
+
+    def _submit_work(self, callback):
+        # callback就是DispatcherExecutorContext类实例
+        # 处理过程又涉及到了GreenThreadPoolExecutor
+        # 我们直接理解为异步执行了
+        # DispatcherExecutorContext中的run和done就好
+        fut = self._work_executor.submit(callback.run)
+        fut.add_done_callback(lambda f: callback.done())
     ......
 ```
+
+
+incoming的结构和,请看[下一节](http://www.lolizeppelin.com/2017/04/05/openstack-AMPQ-4/)

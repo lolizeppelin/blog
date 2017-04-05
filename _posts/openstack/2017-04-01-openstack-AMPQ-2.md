@@ -90,6 +90,7 @@ class RPCDispatcher(dispatcher.DispatcherBase):
         return utils.version_is_compatible(endpoint_version, version)
 
     # Rpc server,也就是MessageHandlingServer,调用RPCDispatcher的方式
+    # 调用位置在下一节有说明
     def __call__(self, incoming):
         # 这个acknowledge肯定是回复rabbitmq ack
         incoming[0].acknowledge()
@@ -108,11 +109,12 @@ class RPCDispatcher(dispatcher.DispatcherBase):
         # incoming就是前面的incoming[0]
         try:
             # 调用incoming.reply
-            # incoming.reply处理了一下self._dispatch
+            # incoming.reply用于应答rpc调用
+            # 也就是返回self._dispatch(incoming.ctxt,incoming.message)
+            # 执行后的的返回值
             # 实际工作还是在self._dispatch里
-            # 用于最终分发消息的还是self._dispatch
-            # 所以具体工作在self._dispatch里
-            # 至于incoming.reply做了哪些额外工作我们在后面说明
+            # 用于最终分发rpc消息具体落地操作是在self._dispatch中
+            # 至于incoming.reply如何应答消息的后面相关章节有说明
             incoming.reply(self._dispatch(incoming.ctxt,
                                           incoming.message))
         # 后面是捕获Exception后的处理
@@ -205,6 +207,7 @@ class DispatcherExecutorContext(object):
     def run(self):
         # 可以看到run是调用dispatch的入口
         # 所以外部需要调用下DispatcherExecutorContext的run的方法才开始执行具体操作
+        # 调用位置在下一节有说明
         try:
             self._result = self._dispatch(self._incoming)
         except Exception:
@@ -224,4 +227,4 @@ class DispatcherExecutorContext(object):
 
 ```
 
-现在剩下的问题是,MessageHandlingServe和incoming的结构和,请看下一节
+现在剩下的问题是,MessageHandlingServe和incoming的结构和,请看[下一节](http://www.lolizeppelin.com/2017/04/01/openstack-AMPQ-3/)

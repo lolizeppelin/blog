@@ -1,7 +1,7 @@
 ---
 layout: post
 title:  "OpenStack Mitaka从零开始 openstack里的AMPQ使用(4)"
-date:   2017-04-01 12:50:00 +0800
+date:   2017-04-05 12:50:00 +0800
 categories: "虚拟化"
 tag: ["openstack", "python"]
 ---
@@ -136,8 +136,9 @@ class ConnectionContext:
         # 获取到的一个connection的封装实例, 赋值到self.connection
         # 这个connection就是rabbit的那个connction了
         # 也就是# oslo_messaging._drivers.impl_rabbit.Connection的实例
-        # 所以ConnectionContext相当于connction的封装
-        # connction比较复杂,是pika相关的封装,需要专门一节和pika等一起讲
+        # 所以ConnectionContext相当于把connction的封装成有上下文对象的实力
+        # 这样可以使用with语法,结束的是后自动调用done
+        # self.connction比较复杂,是pika相关的封装,需要专门一节和pika等一起讲
         # send型调用get返回connection实例
         if pooled:
             self.connection = connection_pool.get()
@@ -163,6 +164,7 @@ class ConnectionContext:
                 # Reset the connection so it's ready for the next caller
                 # to grab from the pool
                 try:
+                    # 重置链接,这里应该是标记链接可以被复用了
                     self.connection.reset()
                 except Exception:
                     LOG.exception(_LE("Fail to reset the connection, drop it"))
@@ -190,6 +192,11 @@ class ConnectionContext:
         else:
             raise InvalidRPCConnectionReuse()
     .....
+```
+
+接下来看看AMQPListener类
+
+```python
 
 class AMQPListener(base.Listener):
     # base.Listener没有内容只有abc
@@ -205,9 +212,9 @@ class AMQPListener(base.Listener):
         self._obsolete_reply_queues = ObsoleteReplyQueuesCache()
 
     def __call__(self, message):
-        # AMQPDriverBase在declare的是后传入的callback就是
-        # AMQPListener实例
-        # 所以接收到apmq消息的时候是从这里传入,这里就是消息入口
+        # AMQPDriverBase在declare的时候将AMQPListener实例callback传入
+        # 也就是说__call__肯定是在rabbit的connection类中调用
+        # 这里也就是apmq消息的入口
         ctxt = rpc_amqp.unpack_context(message)
         unique_id = self.msg_id_cache.check_duplicate_message(message)
         LOG.debug("received message msg_id: %(msg_id)s reply to %(queue)s", {
@@ -264,7 +271,7 @@ def batch_poll_helper(func):
         if driver_prefetch > 0:
             # 取两者间最小值
             prefetch_size = min(prefetch_size, driver_prefetch)
-        # 这是一个超时监视器
+        # 这是一个超时监视器,我们先不管具体是如何实现的
         watch = timeutils.StopWatch(duration=timeout)
         with watch:
             # MessageHandlingServer中pool的时候
@@ -284,4 +291,123 @@ def batch_poll_helper(func):
         return incomings
     return wrapper
 
+
+class AMQPIncomingMessage(base.RpcIncomingMessage):
+
+    def __init__(self, listener, ctxt, message, unique_id, msg_id, reply_q,
+                 obsolete_reply_queues):
+        super(AMQPIncomingMessage, self).__init__(ctxt, message)
+        # 父类的功能是设置两个属性
+        # ctxt是message的ctxt属性转成的字典
+        # message就是具体body
+        self.ctxt = ctxt
+        self.message = message
+        # ---------------------
+        # listener就是AMQPListener
+        self.listener = listener
+        # 下面两个参数是message和ctxt中的相关id
+        self.unique_id = unique_id
+        self.msg_id = msg_id
+        # reply_q在AMQPListener中是
+        # message的ctxt的reply_q方法
+        self.reply_q = reply_q
+        self._obsolete_reply_queues = obsolete_reply_queues
+        # 一个超时监视器
+        self.stopwatch = timeutils.StopWatch()
+        self.stopwatch.start()
+
+
+    def reply(self, reply=None, failure=None, log_failure=True):
+        # 这里就是RPCDispatcher里调用的incoming.reply
+        # reply就是RPCDispatcher落地操作的返回值
+        if not self.msg_id:
+            # NOTE(Alexei_987) not sending reply, if msg_id is empty
+            #    because reply should not be expected by caller side
+            return
+
+        # NOTE(sileht): return without hold the a connection if possible
+        if not self._obsolete_reply_queues.reply_q_valid(self.reply_q,
+                                                         self.msg_id):
+            return
+        # 超时计数器
+        duration = self.listener.driver.missing_destination_retry_timeout
+        timer = rpc_common.DecayingTimer(duration=duration)
+        timer.start()
+        while True:
+            try:
+                # 调用的AMQPListener.driver_get_connection
+                # 也就是RabbitDriver._get_connection
+                # 返回的是ConnectionContext
+                with self.listener.driver._get_connection(
+                        rpc_common.PURPOSE_SEND) as conn:
+                    # 通过_send_reply应答落地执行结果
+                    # 第一个参数是get到的connection
+                    # 第二个是落地操作返回值
+                    self._send_reply(conn, reply, failure,
+                                     log_failure=log_failure)
+                return
+            # 这个返回目的没找到,这个异常是由ConnectionPool类的get中抛出的
+            except rpc_amqp.AMQPDestinationNotFound:
+                # 还在超时时间内
+                if timer.check_return() > 0:
+                    LOG.debug(("The reply %(msg_id)s cannot be sent  "
+                               "%(reply_q)s reply queue don't exist, "
+                               "retrying..."), {
+                                   'msg_id': self.msg_id,
+                                   'reply_q': self.reply_q})
+                    time.sleep(0.25)
+                else:
+                    self._obsolete_reply_queues.add(self.reply_q, self.msg_id)
+                    LOG.info(_LI("The reply %(msg_id)s cannot be sent  "
+                                 "%(reply_q)s reply queue don't exist after "
+                                 "%(duration)s sec abandoning..."), {
+                                     'msg_id': self.msg_id,
+                                     'reply_q': self.reply_q,
+                                     'duration': duration})
+                    return
+
+
+    def _send_reply(self, conn, reply=None, failure=None, log_failure=True):
+        if not self._obsolete_reply_queues.reply_q_valid(self.reply_q,
+                                                         self.msg_id):
+            return
+
+        if failure:
+            failure = rpc_common.serialize_remote_exception(failure,
+                                                            log_failure)
+        # 将返回值reply封装成返回字典
+        msg = {'result': reply, 'failure': failure, 'ending': True,
+               '_msg_id': self.msg_id}
+        rpc_amqp._add_unique_id(msg)
+        unique_id = msg[rpc_amqp.UNIQUE_ID]
+
+        LOG.debug("sending reply msg_id: %(msg_id)s "
+                  "reply queue: %(reply_q)s "
+                  "time elapsed: %(elapsed)ss", {
+                      'msg_id': self.msg_id,
+                      'unique_id': unique_id,
+                      'reply_q': self.reply_q,
+                      'elapsed': self.stopwatch.elapsed()})
+        # 最终调用conn.direct_send,将落地操作返回值发送出去
+        conn.direct_send(self.reply_q, rpc_common.serialize_msg(msg))
+
+    def acknowledge(self):
+        # rabbit mq回复ack
+        self.message.acknowledge()
+        self.listener.msg_id_cache.add(self.unique_id)
+
+    def requeue(self):
+        # NOTE(sileht): In case of the connection is lost between receiving the
+        # message and requeing it, this requeue call fail
+        # but because the message is not acknowledged and not added to the
+        # msg_id_cache, the message will be reconsumed, the only difference is
+        # the message stay at the beginning of the queue instead of moving to
+        # the end.
+        self.message.requeue()
 ```
+
+message的结构现在还不明确,而message又是通过Connection传入的
+```python
+oslo_messaging._drivers.impl_rabbit.Connection
+```
+所以我们接下来要去看Connection类,请看[下一节]
