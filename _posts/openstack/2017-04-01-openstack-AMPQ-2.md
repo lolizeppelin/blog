@@ -27,6 +27,16 @@ class Transport(object):
         return self._driver.listen(target)
     ...
 
+
+def get_rpc_server(transport, target, endpoints,
+                executor='blocking', serializer=None):
+     # dispatcher就是分发器,RPCDispatcher就是这一节的重点
+     dispatcher = rpc_dispatcher.RPCDispatcher(target, endpoints, serializer)
+     # MessageHandlingServer就是rpc server
+     return msg_server.MessageHandlingServer(transport, dispatcher, executor)
+
+
+
 # RPCDispatcher的代码
 class RPCDispatcher(dispatcher.DispatcherBase):
     """A message dispatcher which understands RPC messages.
@@ -52,11 +62,11 @@ class RPCDispatcher(dispatcher.DispatcherBase):
 
     """
     # DispatcherBase主要有以下两个属性
+    # 这值设置分发器一次只处理一个消息
+    # 这个属性在RPC server(MessageHandlingServer)的循环中有使用
+    # 可以看到是固定值1
     batch_size = 1
-    "Number of messages to wait before calling endpoints callacks"
     batch_timeout = None
-    "Number of seconds to wait before calling endpoints callacks"
-
 
     def __init__(self, target, endpoints, serializer):
         self.endpoints = endpoints
@@ -79,17 +89,17 @@ class RPCDispatcher(dispatcher.DispatcherBase):
         endpoint_version = target.version or '1.0'
         return utils.version_is_compatible(endpoint_version, version)
 
-
-    # Rpc server,也就是MessageHandlingServer,使用function的形式处理到来的信息
-    # 所以有个call
+    # Rpc server,也就是MessageHandlingServer,调用RPCDispatcher的方式
     def __call__(self, incoming):
-        # acknowledge会回复rabbitmq ack
+        # 这个acknowledge肯定是回复rabbitmq ack
         incoming[0].acknowledge()
-        # 调用call返回DispatcherExecutorContext实例
-        # 外部会调用DispatcherExecutorContext.run方法执行
-        # 执行其实是在DispatcherExecutorContext里绕了一下
-        # 最终也是调用self._dispatch_and_reply去处理消息
-        # 重点在于incoming[0]是什么
+        # 调用call返回的是DispatcherExecutorContext实例
+        # 外部最后会调用DispatcherExecutorContext.run方法
+        # 这里其实是在DispatcherExecutorContext里绕了一下
+        # DispatcherExecutorContext.run最后也是
+        # 调用RPCDispatcher的_dispatch_and_reply去处理消息的
+        # 重点在于incoming[0]是什么,_dispatch_and_reply里又做了什么
+        # incoming[0]是什么后面会在后面一节说明
         return dispatcher.DispatcherExecutorContext(
             incoming[0], self._dispatch_and_reply)
 
@@ -97,8 +107,12 @@ class RPCDispatcher(dispatcher.DispatcherBase):
         # 从名字可以看出, 用于分发和应答
         # incoming就是前面的incoming[0]
         try:
-            # 调用incoming.reply,incoming.reply用于应答
-            # self._dispatch用于最终分发消息
+            # 调用incoming.reply
+            # incoming.reply处理了一下self._dispatch
+            # 实际工作还是在self._dispatch里
+            # 用于最终分发消息的还是self._dispatch
+            # 所以具体工作在self._dispatch里
+            # 至于incoming.reply做了哪些额外工作我们在后面说明
             incoming.reply(self._dispatch(incoming.ctxt,
                                           incoming.message))
         # 后面是捕获Exception后的处理
@@ -124,7 +138,7 @@ class RPCDispatcher(dispatcher.DispatcherBase):
 
     def _dispatch(self, ctxt, message):
         # 这个就是对消息具体分发的过程
-        # 具体的方法名
+        # method就是具体的方法名
         method = message.get('method')
         # 参数
         args = message.get('args', {})
@@ -146,16 +160,17 @@ class RPCDispatcher(dispatcher.DispatcherBase):
                    # target默认版本号默认为1.0
                     self._is_compatible(target, version)):
                 continue
-            # 在endpoint中找到method
+            # 在endpoint中找到对应method
             if hasattr(endpoint, method):
                 localcontext._set_local_context(ctxt)
                 try:
                     # 调用_do_dispatch
                     # 这里又封装了一次
-                    # 前面的封装是为了找到有对应method的endpoint
-                    # 这里再封装是调用endpoint中的对应方法处理信息
+                    # _dispatch是为了找到有对应method的endpoint
+                    # _do_dispatch是调用endpoint中的对应方法处理信息
                     # 返回值是endpoint的落地操作的结果
                     # 返回值作为incoming.reply的参数
+                    # 也就是让incoming.reply函数去返回返回值
                     return self._do_dispatch(endpoint, method, ctxt, args)
                 finally:
                     localcontext._clear_local_context()
@@ -175,6 +190,7 @@ class RPCDispatcher(dispatcher.DispatcherBase):
             new_args[argname] = self.serializer.deserialize_entity(ctxt, arg)
         # 通过method在endpoint中找到对应的方法
         # 再强调一次,这里的endpoint是 neutron.agent.l3.agent.L3NATAgent
+        # 这里就是具体的落地操作了
         func = getattr(endpoint, method)
         result = func(ctxt, **new_args)
         return self.serializer.serialize_entity(ctxt, result)
@@ -208,4 +224,4 @@ class DispatcherExecutorContext(object):
 
 ```
 
-现在剩下的问题是,incoming的结构,请看下一节
+现在剩下的问题是,MessageHandlingServe和incoming的结构和,请看下一节

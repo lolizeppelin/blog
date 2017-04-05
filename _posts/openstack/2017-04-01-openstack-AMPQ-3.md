@@ -10,8 +10,7 @@ tag: ["openstack", "python"]
 {:toc}
 
 
-incoming的先放一下先看MessageHandlingServer类
-
+我们先看MessageHandlingServer类,也就是RPC server,incoming的放下一节
 
 ```python
 
@@ -24,13 +23,10 @@ class MessageHandlingServer(service.ServiceBase, _OrderedTaskRunner):
     def __init__(self, transport, dispatcher, executor='blocking'):
         self.conf = transport.conf
         self.conf.register_opts(_pool_opts)
-
         self.transport = transport
         self.dispatcher = dispatcher
         self.executor_type = executor
-
         self.listener = None
-
         # 这就是在setuptool的entry_points.txt文件中找到
         # eventlet = futurist:GreenThreadPoolExecutor
         # GreenThreadPoolExecutor in module futurist._futures:
@@ -39,15 +35,11 @@ class MessageHandlingServer(service.ServiceBase, _OrderedTaskRunner):
                                        self.executor_type)
         except RuntimeError as ex:
             raise ExecutorLoadFailure(self.executor_type, ex)
-
-        # _executor_cls就是GreenThreadPoolExecutor
+        # _executor_cls就是GreenThreadPoolExecutor类
         self._executor_cls = mgr.driver
-
         self._work_executor = None
         self._poll_executor = None
-
         self._started = False
-
         super(MessageHandlingServer, self).__init__()
 
     def _submit_work(self, callback):
@@ -64,7 +56,7 @@ class MessageHandlingServer(service.ServiceBase, _OrderedTaskRunner):
                             'instantiate a new object.'))
         self._started = True
 
-        # 调用监听,最终调用的是rabbitmq的驱动的listen方法
+        # 调用监听,最终调用的是rabbitmq的驱动的listen方法的返回值
         try:
             self.listener = self.dispatcher._listen(self.transport)
         except driver_base.TransportDriverError as ex:
@@ -87,37 +79,35 @@ class MessageHandlingServer(service.ServiceBase, _OrderedTaskRunner):
             executor_opts["max_workers"] = (
                 override_pool_size or self.conf.executor_thread_pool_size
             )
-
+        # 当我们用eventlet的方式的时候
+        # 这里相当于生成两个绿色线程池实例
+        # 但是这个绿色线程池不是eventlet封装的,是GreenThreadPoolExecutor封装的
+        # 不使用eventlet的原因在于....兼容用了threading的代码
         # GreenThreadPoolExecutor比较复杂,专门一节说明
+        # 参考http://www.lolizeppelin.com/2017/04/01/python-GreenThreadPoolExecutor/
         self._work_executor = self._executor_cls(**executor_opts)
         self._poll_executor = self._executor_cls(**executor_opts)
-
+        # 调用的是 GreenThreadPoolExecutor的submit
+        # 所以具体死循环就在self._runner中
+        # 我们先别管是如何绿化的,直接看_runner函数就好
         return lambda: self._poll_executor.submit(self._runner)
 
-    @ordered(after='start')
-    def stop(self):
-        """Stop handling incoming messages.
-
-        Once this method returns, no new incoming messages will be handled by
-        the server. However, the server may still be in the process of handling
-        some messages, and underlying driver resources associated to this
-        server are still in use. See 'wait' for more details.
-        """
-        self.listener.stop()
-        self._started = False
-
+    # 这部分是如何绿化的需要看懂GreenThreadPoolExecutor
+    # 这个装饰器是专门catch错误的
     @excutils.forever_retry_uncaught_exceptions
     def _runner(self):
+        # 这里是工作循环
         while self._started:
+            # 这里是从rabbitmq中取出数据
+            # listener是AMQPListener
+            # 接下来我们要看AMQPListener的poll方法
             incoming = self.listener.poll(
                 timeout=self.dispatcher.batch_timeout,
                 prefetch_size=self.dispatcher.batch_size)
-
             if incoming:
                 self._submit_work(self.dispatcher(incoming))
-
-        # listener is stopped but we need to process all already consumed
-        # messages
+        # 走到这里表示调用过了stop
+        # 退出前处理incoming中剩余的数据
         while True:
             incoming = self.listener.poll(
                 timeout=self.dispatcher.batch_timeout,
@@ -127,32 +117,5 @@ class MessageHandlingServer(service.ServiceBase, _OrderedTaskRunner):
                 self._submit_work(self.dispatcher(incoming))
             else:
                 return
-
-    @ordered(after='stop')
-    def wait(self):
-        """Wait for message processing to complete.
-
-        After calling stop(), there may still be some existing messages
-        which have not been completely processed. The wait() method blocks
-        until all message processing has completed.
-
-        Once it's finished, the underlying driver resources associated to this
-        server are released (like closing useless network connections).
-        """
-        self._poll_executor.shutdown(wait=True)
-        self._work_executor.shutdown(wait=True)
-
-        # Close listener connection after processing all messages
-        self.listener.cleanup()
-
-    def reset(self):
-        """Reset service.
-
-        Called in case service running in daemon mode receives SIGHUP.
-        """
-        # TODO(sergey.vilgelm): implement this method
-        pass
-
-
-
+    ......
 ```
