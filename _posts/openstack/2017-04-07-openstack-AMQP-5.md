@@ -1,7 +1,7 @@
 ---
 layout: post
 title:  "OpenStack Mitaka从零开始 openstack里的AMQP使用(5)"
-date:   2017-04-05 12:50:00 +0800
+date:   2017-04-07 12:50:00 +0800
 categories: "虚拟化"
 tag: ["openstack", "python"]
 ---
@@ -9,9 +9,12 @@ tag: ["openstack", "python"]
 * content
 {:toc}
 
+这节主要讲解Connection类以及相关的Consumer类,同时确认了AMQPListener.\__call__传入的变量是什么
+
 
 ```python
 
+# oslo_messaging._drivers.impl_rabbit.Connection
 
 class Connection(object):
     """Connection object."""
@@ -23,20 +26,22 @@ class Connection(object):
         driver_conf = conf.oslo_messaging_rabbit
         ......
         # 省略属性部分
-        # Try forever?
+        # 当前最大重试次数
+        # 来源是配置文件的rabbit_max_retries
+        # 用于控制ensure中的默认retry次数
         if self.max_retries <= 0:
             self.max_retries = None
-
+        # rabbit的 vhost
         if url.virtual_host is not None:
             virtual_host = url.virtual_host
         else:
             virtual_host = self.virtual_host
-
         self._url = ''
         if self.fake_rabbit:
-            # 假冒rabbit
+            # 假冒rabbit方式
             ....
         elif url.hosts:
+            # 常规配置走这里
             if url.transport.startswith('kombu+'):
                 LOG.warning(_LW('Selecting the kombu transport through the '
                                 'transport url (%s) is a experimental feature '
@@ -48,6 +53,7 @@ class Connection(object):
                 # 我们的rabbit走这里
                 transport = url.transport.replace('kombu+', '')
                 # rabbit被替换成amqp
+                # 所以我们的最终驱动其实是amqp,和py-amqp有关
                 transport = transport.replace('rabbit', 'amqp')
                 # 用字符串";"合并url
                 self._url += '%s%s://%s:%s@%s:%s/%s' % (
@@ -62,18 +68,15 @@ class Connection(object):
             ....
         else:
             .....
-
         self._initial_pid = os.getpid()
-
         self._consumers = {}
         self._new_tags = set()
         self._active_tags = {}
         self._tags = itertools.count(1)
-
         self._consume_loop_stopped = False
+        # 当前connection所在的channel
         self.channel = None
         self.purpose = purpose
-
         # send和listen的锁不一样
         if purpose == rpc_common.PURPOSE_SEND:
             self._connection_lock = ConnectionLock()
@@ -81,7 +84,8 @@ class Connection(object):
             self._connection_lock = DummyConnectionLock()
         # 初始化kombu的Connection
         # socket数据的收发,amqp消息的封装生成都在kombu里完成
-        # kombu最终是调用py-ampq封装成amqp数据包的
+        # kombu最终是调用py-amqp封装成amqp数据包的
+        # 所以url里把rabbit替换成了amqp
         self.connection = kombu.connection.Connection(
             self._url, ssl=self._fetch_ssl_params(),
             # login_method没什么大用,不同登陆模式区别看
@@ -89,7 +93,7 @@ class Connection(object):
             login_method=self.login_method,
             heartbeat=self.heartbeat_timeout_threshold,
             failover_strategy=self.kombu_failover_strategy,
-            # 这个是py-ampq用的参数
+            # 这个是py-amqp用的参数
             transport_options={
                 'confirm_publish': True,
                 'client_properties': {'capabilities': {
@@ -136,7 +140,7 @@ class Connection(object):
         # 这里是看kombu是否支持心跳
         if self.connection.supports_heartbeats:
             return True
-        # 如果kombu的connection不支持心跳
+        # 如果当前kombu版本的connection不支持心跳
         # 设置_heartbeat_support_log_emitted参数为true后再返回False
         # _heartbeat_support_log_emitted我没发现有什么用
         elif not self._heartbeat_support_log_emitted:
@@ -147,7 +151,10 @@ class Connection(object):
 
     def ensure_connection(self):
         self._set_current_channel(None)
-        # ensure比较复杂,method需要callable
+        # ensure比较复杂,method本身需要callable,所以这里直接弄了个匿名函数
+        # 返回值是self.connection.connection
+        # self.connection是kombu的connection
+        # self.connection.connection就是amqp的connection
         self.ensure(method=lambda: self.connection.connection)
         self.set_transport_socket_timeout()
 
@@ -168,12 +175,12 @@ class Connection(object):
                recoverable_error_callback=None, error_callback=None,
                timeout_is_error=True):
         """
+        底层执行函数,基本不会直接调用,被其他函数调用
         用于执行method,重试次数根据retry的值来定
         retry = None 相当于 retry=rabbit_max_retries
         retry = -1 则无限重试
         retry = 0 不重试
         retry = N 重试N次
-
         这个函数调用前必须调用connection lock
         ensure执行的method不能有参数
         """
@@ -233,7 +240,7 @@ class Connection(object):
             self._set_current_channel(channel)
             method()
         # 我们用rabbit mq的时候
-        # 这里相当于找py-ampq有没有recoverable_connection_errors
+        # 这里相当于找py-amqp有没有recoverable_connection_errors
         # recoverable_errors是多个异常组成的tuple
         # 用于后面捕获异常
         # recoverable_errors是可恢复的error
@@ -287,19 +294,22 @@ class Connection(object):
             # 抛出异常
             raise
 
-    # 注册一个direct类型的consumer,也就是direct的queue
-    def declare_direct_consumer(self, topic, callback):
+    # 注册一个topic类型的consumer
+    def declare_topic_consumer(self, exchange_name, topic, callback=None,
+                               queue_name=None):
         # 生成Consumer实例
-        consumer = Consumer(exchange_name=topic,
-                            queue_name=topic,
+        # Consumer类中分装了kombu的Queue和Exchange
+        # RabbitDriver调用declare_topic_consumer时
+        # 传入的callback是AMQPListener实例
+        consumer = Consumer(exchange_name=exchange_name,
+                            queue_name=queue_name or topic,
                             routing_key=topic,
-                            type='direct',
-                            durable=False,
-                            exchange_auto_delete=True,
-                            queue_auto_delete=False,
+                            type='topic',
+                            durable=self.amqp_durable_queues,
+                            exchange_auto_delete=self.amqp_auto_delete,
+                            queue_auto_delete=self.amqp_auto_delete,
                             callback=callback,
-                            rabbit_ha_queues=self.rabbit_ha_queues,
-                            rabbit_queue_ttl=self.rabbit_transient_queues_ttl)
+                            rabbit_ha_queues=self.rabbit_ha_queues)
         self.declare_consumer(consumer)
 
     def declare_consumer(self, consumer):
@@ -311,12 +321,16 @@ class Connection(object):
         # 实际declare的函数
         def _declare_consumer():
             # 这里把self传入
+            # 声明消费者,
+            # amqp协议没有声明消费者,所以实际上是声明队列
             consumer.declare(self)
             tag = self._active_tags.get(consumer.queue_name)
             if tag is None:
                 tag = next(self._tags)
                 self._active_tags[consumer.queue_name] = tag
                 self._new_tags.add(tag)
+            # 每声明一个consumer
+            # 就会添加到self._consumers字典中
             self._consumers[consumer] = tag
             return consumer
 
@@ -324,6 +338,15 @@ class Connection(object):
             # 用ensure去执行_declare_consumer
             return self.ensure(_declare_consumer,
                                error_callback=_connect_error)
+
+    def consume(self, timeout=None):
+        .....
+        # consume函数内容较多就不贴了
+        # 这个函数在AMQPListener的pool函数中被调用
+        # 这个函数会遍历self._consumers字典
+        # 然后调用每个consumer实例的consume方法
+        # 也就是pool中才声明了消费者
+
 
     # ----------------------下面是发送函数-----------------------------
     def direct_send(self, msg_id, msg):
@@ -385,6 +408,219 @@ class Connection(object):
         with self._transport_socket_timeout(timeout):
             producer.publish(msg, expiration=self._get_expiration(timeout),
                              compression=self.kombu_compression)
+    .....
+    # 省略其他代码
 
+# Consumer类
+class Consumer(object):
+    def __init__(self, exchange_name, queue_name, routing_key, type, durable,
+                 exchange_auto_delete, queue_auto_delete, callback,
+                 nowait=True, rabbit_ha_queues=None, rabbit_queue_ttl=0):
+        # Consumer的属性大部分是amqp相关的参数
+        self.queue_name = queue_name
+        self.exchange_name = exchange_name
+        self.routing_key = routing_key
+        self.exchange_auto_delete = exchange_auto_delete
+        self.queue_auto_delete = queue_auto_delete
+        self.durable = durable
+        # RabbitDriver中declare_topic_consumer时
+        # 传入的callback是AMQPListener实例
+        self.callback = callback
+        self.type = type
+        self.nowait = nowait
+        # 这里是把两个配置文件组成字典
+        self.queue_arguments = _get_queue_arguments(rabbit_ha_queues,
+                                                    rabbit_queue_ttl)
+
+        self.queue = None
+        self.exchange = kombu.entity.Exchange(
+            name=exchange_name,
+            type=type,
+            durable=self.durable,
+            auto_delete=self.exchange_auto_delete)
+
+    def declare(self, conn):
+        # 声明队列
+        # 先生成kombu的Queue实例
+        self.queue = kombu.entity.Queue(
+            name=self.queue_name,
+            channel=conn.channel,
+            exchange=self.exchange,
+            durable=self.durable,
+            auto_delete=self.queue_auto_delete,
+            routing_key=self.routing_key,
+            queue_arguments=self.queue_arguments)
+
+        try:
+            LOG.trace('ConsumerBase.declare: '
+                      'queue %s', self.queue_name)
+            # 声明当前queue
+            self.queue.declare()
+        except conn.connection.channel_errors as exc:
+            # NOTE(jrosenboom): This exception may be triggered by a race
+            # condition. Simply retrying will solve the error most of the time
+            # and should work well enough as a workaround until the race
+            # condition itself can be fixed.
+            # See https://bugs.launchpad.net/neutron/+bug/1318721 for details.
+            if exc.code == 404:
+                self.queue.declare()
+            else:
+                raise
+
+    def consume(self, tag):
+        # 当前消费者订阅队列
+        # 订阅的时候把self._callback传入kombu.entity.Queue中
+        # connection调用consume的时候
+        # 这里才被调用,也就是这时候才开始订阅
+        # 参考前面Connection类的consume方法说明
+        self.queue.consume(callback=self._callback,
+                           consumer_tag=six.text_type(tag),
+                           nowait=self.nowait)
+
+    def cancel(self, tag):
+        # 取消队列订阅
+        LOG.trace('ConsumerBase.cancel: canceling %s', tag)
+        self.queue.cancel(six.text_type(tag))
+
+    def _callback(self, message):
+        # 回调函数
+        # 当前函数是在consume函数订阅队列时候作为callback
+        # 传入kombu.entity.Queue中,所以message的类型需要到kombu中看
+        # ---------------------------------#
+        # channel中有message_to_python方法就调用message_to_python
+        # 转换传入的message
+        m2p = getattr(self.queue.channel, 'message_to_python', None)
+        if m2p:
+            message = m2p(message)
+        # 调用回调
+        try:
+            # 也就是说,AMQPListener的__call__的参数是
+            # 传入的是RabbitMessage的实例
+            # 也就是说AMQPListener中
+            # AMQPIncomingMessage封装的message
+            # 是RabbitMessage
+            self.callback(RabbitMessage(message))
+        except Exception:
+            LOG.exception(_LE("Failed to process message"
+                              " ... skipping it."))
+            # 转化为RabbitMessage或者调用callback报错
+            # 回复ack
+            message.ack()
+
+class RabbitMessage(dict):
+    # RabbitMessage是个字典,简单的封装了一下原始message
+    # 主要功能作为一个普通字典, 数据来源raw_message.payload['oslo.message']
+    # 多了两个方法
+    # acknowledge和requeue
+    def __init__(self, raw_message):
+        super(RabbitMessage, self).__init__(
+            # deserialize_msg主要顺便检查了消息的版本号
+            # 然后取出raw_message.payload['oslo.message']部分数据
+            # 并转化这部分数据为dict
+            rpc_common.deserialize_msg(raw_message.payload))
+        LOG.trace('RabbitMessage.Init: message %s', self)
+        self._raw_message = raw_message
+
+    def acknowledge(self):
+        LOG.trace('RabbitMessage.acknowledge: message %s', self)
+        self._raw_message.ack()
+
+    def requeue(self):
+        LOG.trace('RabbitMessage.requeue: message %s', self)
+        self._raw_message.requeue()
 
 ```
+
+
+我们来看看序列化和反序列化
+
+```python
+
+
+_VERSION_KEY = 'oslo.version'
+_MESSAGE_KEY = 'oslo.message'
+
+def deserialize_msg(msg):
+    # 外部调用的是rpc_common.deserialize_msg(raw_message.payload))
+    # 这里也就是说raw_message.payload一定是字典
+    if not isinstance(msg, dict):
+        return msg
+    base_envelope_keys = (_VERSION_KEY, _MESSAGE_KEY)
+    # 这个写法是确保msg的字典包含有base_envelope_keys
+    # 相当于双循环找key,这个写法比较漂亮
+    if not all(map(lambda key: key in msg, base_envelope_keys)):
+        return msg
+    # 从oslo.version中取出版本号,确认版本号兼容
+    if not utils.version_is_compatible(_RPC_ENVELOPE_VERSION,
+                                       msg[_VERSION_KEY]):
+        raise UnsupportedRpcEnvelopeVersion(version=msg[_VERSION_KEY])
+    # 从oslo.message中取出数据转成dict并返回
+    raw_msg = jsonutils.loads(msg[_MESSAGE_KEY])
+    return raw_msg
+
+# AMQPListener从message里获取context_dict的方法也看一下
+# 这里传入的msg也就是RabbitMessage
+def unpack_context(msg):
+    context_dict = {}
+    # 从RabbitMessage中取出所有_context_打头的key和value
+    for key in list(msg.keys()):
+        key = six.text_type(key)
+        if key.startswith('_context_'):
+            value = msg.pop(key)
+            context_dict[key[9:]] = value
+    # 取出key是_msg_id和_reply_q的key
+    context_dict['msg_id'] = msg.pop('_msg_id', None)
+    context_dict['reply_q'] = msg.pop('_reply_q', None)
+    # 转成RpcContext实例
+    # 也就是说unpack_context返回的不是dict而是
+    # RpcContext实例
+    # 主要内容上面也比较明了
+    # 取出部分数据, 也就是把RabbitMessage的数据再拆分走一部分
+    return RpcContext.from_dict(context_dict)
+
+
+class RpcContext(rpc_common.CommonRpcContext):
+    """Context that supports replying to a rpc.call."""
+    def __init__(self, **kwargs):
+        self.msg_id = kwargs.pop('msg_id', None)
+        self.reply_q = kwargs.pop('reply_q', None)
+        super(RpcContext, self).__init__(**kwargs)
+
+    def deepcopy(self):
+        values = self.to_dict()
+        values['conf'] = self.conf
+        values['msg_id'] = self.msg_id
+        values['reply_q'] = self.reply_q
+        return self.__class__(**values)
+
+class CommonRpcContext(object):
+    def __init__(self, **kwargs):
+        # self.values就是前面的context_dict字典
+        self.values = kwargs
+
+    def __getattr__(self, key):
+        # 模拟字典
+        try:
+            return self.values[key]
+        except KeyError:
+            raise AttributeError(key)
+
+    def to_dict(self):
+        # 可以看到to_dict方法是个
+        # self.values就是前面的context_dict字典
+        return copy.deepcopy(self.values)
+
+    @classmethod
+    def from_dict(cls, values):
+        return cls(**values)
+
+    def deepcopy(self):
+        return self.from_dict(self.to_dict())
+
+    def update_store(self):
+        # local.store.context = self
+        pass
+
+```
+
+接下来要完全搞清楚,需要看kombu和py-amqp

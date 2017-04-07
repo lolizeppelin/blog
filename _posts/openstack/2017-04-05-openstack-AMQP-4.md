@@ -221,12 +221,14 @@ class AMQPListener(base.Listener):
         # AMQPDriverBase在declare的时候将AMQPListener实例callback传入
         # 也就是说__call__肯定是在rabbit的connection类中调用
         # 这里也就是apmq消息的入口
+        # message是什么要看下一节
         ctxt = rpc_amqp.unpack_context(message)
         unique_id = self.msg_id_cache.check_duplicate_message(message)
         LOG.debug("received message msg_id: %(msg_id)s reply to %(queue)s", {
             'queue': ctxt.reply_q, 'msg_id': ctxt.msg_id})
         # 这里就incoming的类了
         # incoming是AMQPIncomingMessage类实例组成的列表
+        # AMQPIncomingMessage相当于封装了一下message
         self.incoming.append(AMQPIncomingMessage(self,
                                                  ctxt.to_dict(),
                                                  message,
@@ -248,12 +250,15 @@ class AMQPListener(base.Listener):
                 # 对比__call__收到的数据总是插入到列表的最后
                 # 这里返回的是AMQPIncomingMessage实例
                 # 但是外部取的是incoming[0]
-                # 这里通过batch_poll_helper装饰器
+                # 因为这里通过batch_poll_helper装饰器
                 # 把返回转成了只有一个值的列表
                 # 看下面batch_poll_helper
                 return self.incoming.pop(0)
             try:
-                # 没有数据,重建consume
+                # 没有数据,消费者订阅(绑定到)队列
+                # 也就是说第一次pool的时候才消费者才开始订阅
+                # AMQPListener实例第一次作为callback进入到
+                # kombu.entity.Queue中
                 self.conn.consume(timeout=timeout)
             except rpc_common.Timeout:
                 return None
@@ -418,4 +423,4 @@ message的结构现在还不明确,而message又是通过Connection传入的
 ```python
 oslo_messaging._drivers.impl_rabbit.Connection
 ```
-所以我们接下来要去看Connection类,请看[下一节]
+所以我们接下来要去看Connection类,请看[下一节](http://www.lolizeppelin.com/2017/04/07/openstack-AMQP-5/)
