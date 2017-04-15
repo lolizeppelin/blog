@@ -536,7 +536,6 @@ class RabbitMessage(dict):
 
 ```python
 
-
 _VERSION_KEY = 'oslo.version'
 _MESSAGE_KEY = 'oslo.message'
 
@@ -623,4 +622,4 @@ class CommonRpcContext(object):
 
 ```
 
-接下来要完全搞清楚,需要看kombu和py-amqp
+接下来要完全搞清楚原生message是什么,需要看kombu和py-amqp
