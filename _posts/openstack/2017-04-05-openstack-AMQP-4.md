@@ -255,10 +255,13 @@ class AMQPListener(base.Listener):
                 # 看下面batch_poll_helper
                 return self.incoming.pop(0)
             try:
-                # 没有数据,消费者订阅(绑定到)队列
-                # 也就是说第一次pool的时候才消费者才开始订阅
-                # AMQPListener实例第一次作为callback进入到
-                # kombu.entity.Queue中
+                # 这里的consume不光是绑定消费者
+                # 同时也调用数据接收函数也就是kombu里的drain_events
+                # 如果消费者没有绑定过,先订阅消费者(将callback也就自身的传入)
+                # 如过消费者已经订阅过队列了
+                # 一旦有数据到来就会调用前面的__call__塞入amqp数据
+                # 前面也就能pop出数据了
+                # 这个循环实现了接受一个数据、处理一个数据、再收一个数据的循环
                 self.conn.consume(timeout=timeout)
             except rpc_common.Timeout:
                 return None

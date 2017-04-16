@@ -230,7 +230,7 @@ class Connection(object):
             self.set_transport_socket_timeout()
             self._set_current_channel(new_channel)
             for consumer in self._consumers:
-                # 重新declare
+                # 重新声明消费者
                 consumer.declare(self)
             LOG.info(_LI('Reconnected to AMQP server on '
                          '%(hostname)s:%(port)s via [%(transport)s] client'),
@@ -341,11 +341,43 @@ class Connection(object):
 
     def consume(self, timeout=None):
         .....
-        # consume函数内容较多就不贴了
+        # consume函数内容较多就不全贴了
         # 这个函数在AMQPListener的pool函数中被调用
-        # 这个函数会遍历self._consumers字典
-        # 然后调用每个consumer实例的consume方法
-        # 也就是pool中才声明了消费者
+        def _consume():
+            ....
+            # 有新消费者
+            if self._new_tags:
+                for consumer, tag in self._consumers.items():
+                    if tag in self._new_tags:
+                        # 先绑定消费者到队列上(同时consumer._callback会绑定到kombu的队列上)
+                        consumer.consume(tag=tag)
+                        self._new_tags.remove(tag)
+
+            poll_timeout = (self._poll_timeout if timeout is None
+                            else min(timeout, self._poll_timeout))
+            while True:
+                # 这个循环是socket超时重试用的
+                if self._consume_loop_stopped:
+                    return
+
+                if self._heartbeat_supported_and_enabled():
+                    self._heartbeat_check()
+
+                try:
+                    # 这里就是从获取到一帧ampq数据并调用
+                    # consumer._callback然后调用AMQPListener.__call__
+                    self.connection.drain_events(timeout=poll_timeout)
+                    # 数据帧只收一帧
+                    return
+                except socket.timeout as exc:
+                    poll_timeout = timer.check_return(
+                        _raise_timeout, exc, maximum=self._poll_timeout)
+
+        with self._connection_lock:
+            # 用ensure函数确保执行
+            self.ensure(_consume,
+                        recoverable_error_callback=_recoverable_error_callback,
+                        error_callback=_error_callback)
 
 
     # ----------------------下面是发送函数-----------------------------

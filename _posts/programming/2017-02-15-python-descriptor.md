@@ -361,7 +361,8 @@ contoler out withfuck!!!
 我们注意下打印的第二行。
 
     init func not none, func is  <function __call__ at 0x0000000002BD5048>
-    说明在类初始化的时候,传给Wsgify.__init__()的func是function,而不是unboundmethod！！也就是说丢失了self....
+    说明在类初始化的时候,传给Wsgify.__init__()的func是function
+    而不是unboundmethod！！也就是说丢失了self....（method变function的说明看本节最末尾）
     Wsgify.__get__()中的函数就是为了把传入的Router的__call__还原为method
     staticmethod的作用是把_dispatch当成外部函数不是类中的函数,可以理解为如下写法
 
@@ -672,3 +673,34 @@ class Resource(wsgi.Application):
     def __call__(self, request)
        ....
 ```
+
+
+最末尾来看看method变function的过程
+
+
+```python
+class T(object):
+    def __init__(self, func):
+        print 'init argv func is', type(func)
+
+class A(object):
+    def __init__(self):
+        pass
+    def ppp(self, x):
+        print x
+    # @T来修饰ppp的话就相当于
+    # ppp = T(ppp)
+    # 这里专门换成了xx便于理解
+    xx = T(ppp)
+    def gg(self):
+        print 'self.ppp', type(self.ppp)
+        print 'self.xx', type(self.xx)
+a = A()
+a.gg()
+```
+
+输出为
+
+  init argv func is <type 'function'>
+  self.ppp <type 'instancemethod'>
+  self.xx <class '__main__.T'>

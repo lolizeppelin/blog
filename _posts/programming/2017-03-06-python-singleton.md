@@ -132,6 +132,4 @@ intance = singleton.singleton
 
 因为python中的module就是最好的单例模式
 
-#### 写在最末尾,了解单例模式可以更好的理解pthon中一切皆对象
-
-我们现在回头看看python的闭包函数中自由变量的疑问,待续
+#### 写在最末尾,了解单例模式可以更好的理解pthon中一切皆对象,module里的class、function其实都是对象,而且都是单例的
