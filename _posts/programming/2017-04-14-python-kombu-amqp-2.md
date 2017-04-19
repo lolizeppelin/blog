@@ -14,25 +14,29 @@ tag: ["python", "linux"]
 
 ```python
  # kombu.transport.pyamqp.Transport
-
  class Transport(base.Transport):
      # Connection类
      # amqp.connection.Connection
      Connection = Connection
      ...
-
      # client是kombu.connection.Connection
      def __init__(self, client,
                   default_port=None, default_ssl_port=None, **kwargs):
          # client是kombu.connection.Connection类实例
-         # 注意和这里的Connection不是一个
+         # 这里的connection是amqp.connection.Connection
          self.client = client
          self.default_port = default_port or self.default_port
          self.default_ssl_port = default_ssl_port or self.default_ssl_port
          ....
 
+     def create_channel(self, connection):
+         # 这个在kombu.connection.Connection类实例中调用
+         # 传入的connection就是amqp.connection.Connection
+         return connection.channel()
+
      def establish_connection(self):
-         """Establish connection to the AMQP broker."""
+         # kombu.connection.Connection调用establish_connection生成
+         # amqp.connection.Connection实例
          conninfo = self.client
          for name, default_value in items(self.default_connection_params):
              if not getattr(conninfo, name, None):
@@ -50,21 +54,72 @@ tag: ["python", "linux"]
              'connect_timeout': conninfo.connect_timeout,
              'heartbeat': conninfo.heartbeat,
          }, **conninfo.transport_options or {})
-         # 生成Connection类实例
+         # 生成amqp.connection.Connection类实例
          conn = self.Connection(**opts)
-         # client也传入
+         #  把self.client, 也就是kombu.connection.Connection
+         # 传入amqp.connection.Connection
          conn.client = self.client
+         # 这里调用了connect,链接了socket
          conn.connect()
+         # kombu.connection.Connection中将设置
+         # connection等于这个conn
+         # 两个类型的connection间循环引用
          return conn
 
 # amqp.connection.Connection
 class Connection(AbstractChannel):
-
     Channel = Channel
-
     def __init__(self, ....):
-        self.frame_handler_cls = frame_handler
         # init里主要是参数初始化
+        # 主要参数说明下
+        # 给自己分配一个
+        self._connection_id = uuid.uuid4().hex
+        # 链接中的channels列表,一个connection对应多个channel
+        self.channels = {}
+        # on_inbound_frame通过frame_handler_cls生成
+        # frame_handler函数在后面有说明
+        self.frame_handler_cls = frame_handler
+        # 父类中调用下面的_setup_listeners
+        # 第一个参数是当前connection本身
+        # 第二个是Channel的id
+        # 现在其实还没有生成过Channel
+        # 但是channel的id肯定是是从0开始
+        # 所以传0进去
+        super(Connection, self).__init__(self, 0)
+
+    # 下面两个channel_id是在Channel中调用给Channel分配id的
+    # Channel的id由Connection来分配
+    def _get_free_channel_id(self):
+        try:
+            return self._avail_channel_ids.pop()
+        except IndexError:
+            raise ResourceError(
+                'No free channel ids, current={0}, channel_max={1}'.format(
+                    len(self.channels), self.channel_max), spec.Channel.Open)
+
+    def _claim_channel_id(self, channel_id):
+        try:
+            return self._avail_channel_ids.remove(channel_id)
+        except ValueError:
+            raise ConnectionError('Channel %r already open' % (channel_id,))
+
+    def channel(self, channel_id=None, callback=None):
+        # self.channels在connection初始化的时候默认是空字典
+        # connection关闭后会设置为None(为的是防止循环引用)
+        # 这个方法在上面的Transport的create_channel中被调用
+        if self.channels is not None:
+            try:
+                # 找到了对应channel_id
+                return self.channels[channel_id]
+            except KeyError:
+                # 一般情况下channel_id都是None,都会走到这里
+                # 没有找到对应channel_id,直接生成一个新的Channel实例
+                channel = self.Channel(self, channel_id, on_open=callback)
+                # 调用channel开启
+                channel.open()
+                return channel
+        # self.channels是None表示当前connection已经关闭
+        raise RecoverableConnectionError('Connection already closed.')
 
     # 注入各种回调
     def _setup_listeners(self):
@@ -93,8 +148,45 @@ class Connection(AbstractChannel):
     def _on_open_ok(self):
         #_on_open_ok回调设置_handshake_complete
         self._handshake_complete = True
-        # on_open又是个兼容python 2、3的处理
+        # self.on_open又是个兼容python 2、3的处理
         self.on_open(self)
+
+    def _on_close_ok(self):
+        # 收到CloseOk包,调用链接关闭回调
+        self.collect()
+
+    def collect(self):
+        # 资源回收
+        try:
+            # tcp关闭
+            if self._transport:
+                self._transport.close()
+            temp_list = [x for x in values(self.channels) if x is not self]
+            # 调用channel的collect,让channel释放资源
+            for ch in temp_list:
+                ch.collect()
+        except socket.error:
+            pass  # connection already closed on the other end
+        finally:
+            # 因为这几个对象间有循环引用
+            # 通过设置为空后消除循环引用
+            # 以便垃圾回收器能回收这些对象
+            self._transport = self.connection = self.channels = None
+
+    def close(self, reply_code=0, reply_text='', method_sig=(0, 0),
+              argsig='BsBB'):
+        # _transport为None就说明已经调用过前面的collect
+        if self._transport is None:
+            # already closed
+            return
+        # 主动通知服务器关闭链接
+        # 如果服务器正常收到会回发CloseOk包,
+        # 收到后将会通过_on_close_ok调用前面的collect
+        return self.send_method(
+            spec.Connection.Close, argsig,
+            (reply_code, reply_text, method_sig[0], method_sig[1]),
+            wait=spec.Connection.CloseOk,
+        )
 
     def connect(self, callback=None):
         # socket链接在这
@@ -315,12 +407,10 @@ class GenericContent(object):
         self.ready = False
 
     def __getattr__(self, name):
-        # Look for additional properties in the 'properties'
-        # dictionary, and if present - the 'delivery_info' dictionary.
+        # 从properties字典中取出属性
         if name == '__setstate__':
             # Allows pickling/unpickling to work
             raise AttributeError('__setstate__')
-
         if name in self.properties:
             return self.properties[name]
         raise AttributeError(name)
@@ -341,7 +431,7 @@ class GenericContent(object):
         # 我们看接收部分可以掠过
 
     def inbound_header(self, buf, offset=0):
-        # 因为基本都是处理整个buf,buf分包粘包都处理过的
+        # 一般传入的buf已经是处理过的不需要再切片
         # 所以offset一般都是0
         # class_id肯定是Basic.CLASS_ID
         # 在这里设置了当前msg的包体长度
@@ -385,5 +475,5 @@ class GenericContent(object):
 
 现在剩下2个问题
 
-1. transport.read_frame()生成返回值的过程
-2. channel的dispatch_method的过程(如何调用外城传入的callback)
+1. transport也就是TCPTransport中read_frame()生成返回值的过程和返回结构
+2. channel中dispatch_method的过程(如何调用外部传入的callback)

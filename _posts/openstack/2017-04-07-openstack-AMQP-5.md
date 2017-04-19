@@ -113,7 +113,8 @@ class Connection(object):
             float(self.heartbeat_timeout_threshold) /
             float(self.heartbeat_rate) / 2.0)
         self._heartbeat_support_log_emitted = False
-        # 这里是来时socket连接
+        # self.connection.connection的初始化
+        # 这里socket开始连接
         self.ensure_connection()
         # 心跳线程,当我们用的是eventlet的时候,走的也是绿色线程
         self._heartbeat_thread = None
@@ -155,11 +156,14 @@ class Connection(object):
         # 返回值是self.connection.connection
         # self.connection是kombu的connection
         # self.connection.connection就是amqp的connection
+        # 访问self.connection.connection的时候
+        # socket会开始连接
         self.ensure(method=lambda: self.connection.connection)
         self.set_transport_socket_timeout()
 
     def _set_current_channel(self, new_channel):
         # 设置当前正在使用的channel
+        # 在connection还没链接的时候这个方法调用没有任何效果
         if new_channel == self.channel:
             return
         if self.channel is not None:
@@ -256,6 +260,9 @@ class Connection(object):
 
         try:
             # 通过kombu的autoretry生成一个自动retry的实例
+            # 在还没有设置过channel的情况下(self.channel为None)
+            # kombu的autoretry会调用下层connection的
+            # default_channel方法生成一个默认channel
             autoretry_method = self.connection.autoretry(
                 execute_method, channel=self.channel,
                 max_retries=retry,
@@ -265,8 +272,11 @@ class Connection(object):
                 interval_max=self.interval_max,
                 on_revive=on_reconnection)
             # 调用生成的autoretry_method并返回
+            # 返回的autoretry_method是一个闭包
             ret, channel = autoretry_method()
+            # 设置当前channel(第一次调用过后当前channel就有值了)
             self._set_current_channel(channel)
+            # ret是execute_method的返回值
             return ret
         except recoverable_errors as exc:
             # recoverable_errors可恢复的错误
@@ -298,9 +308,11 @@ class Connection(object):
     def declare_topic_consumer(self, exchange_name, topic, callback=None,
                                queue_name=None):
         # 生成Consumer实例
-        # Consumer类中分装了kombu的Queue和Exchange
+        # Consumer类初始化的时候会生成kombu的Exchange
+        # declare_consumer的时候会生成kombu的Queue
         # RabbitDriver调用declare_topic_consumer时
         # 传入的callback是AMQPListener实例
+        # Consumer传入的callback参数是AMQPListener实例
         consumer = Consumer(exchange_name=exchange_name,
                             queue_name=queue_name or topic,
                             routing_key=topic,
@@ -321,8 +333,8 @@ class Connection(object):
         # 实际declare的函数
         def _declare_consumer():
             # 这里把self传入
-            # 声明消费者,
-            # amqp协议没有声明消费者,所以实际上是声明队列
+            # 声明消费者, 这里其实只是声明了队列
+            # 还没把消费者绑定到队列上
             consumer.declare(self)
             tag = self._active_tags.get(consumer.queue_name)
             if tag is None:
@@ -342,32 +354,37 @@ class Connection(object):
     def consume(self, timeout=None):
         .....
         # consume函数内容较多就不全贴了
-        # 这个函数在AMQPListener的pool函数中被调用
+        # 这个函数在AMQPListener的pool函数中被循环调用
+        # 通过self.connection.drain_events接收数据
         def _consume():
             ....
             # 有新消费者
             if self._new_tags:
                 for consumer, tag in self._consumers.items():
                     if tag in self._new_tags:
-                        # 先绑定消费者到队列上(同时consumer._callback会绑定到kombu的队列上)
+                        # 新来的消费者调用一次consume
+                        # 这里就是把callback, 也就是注入AMQPListener实例
+                        # 注入到kombu的地方
+                        # 我们在后面的drain_events会从socket中获取到amqp的帧
+                        # 但是kombu调用AMQPListener.__call__的部分需要到kombu中找
                         consumer.consume(tag=tag)
                         self._new_tags.remove(tag)
 
             poll_timeout = (self._poll_timeout if timeout is None
                             else min(timeout, self._poll_timeout))
+            # 这个循环是socket超时重试用的
             while True:
-                # 这个循环是socket超时重试用的
+
                 if self._consume_loop_stopped:
                     return
-
                 if self._heartbeat_supported_and_enabled():
                     self._heartbeat_check()
 
                 try:
                     # 这里就是从获取到一帧ampq数据并调用
-                    # consumer._callback然后调用AMQPListener.__call__
-                    self.connection.drain_events(timeout=poll_timeout)
                     # 数据帧只收一帧
+                    # 收完退出
+                    self.connection.drain_events(timeout=poll_timeout)
                     return
                 except socket.timeout as exc:
                     poll_timeout = timer.check_return(
@@ -465,6 +482,7 @@ class Consumer(object):
                                                     rabbit_queue_ttl)
 
         self.queue = None
+        # 交换机在生成Consumer实例的时候生成交换机对象
         self.exchange = kombu.entity.Exchange(
             name=exchange_name,
             type=type,
@@ -472,10 +490,12 @@ class Consumer(object):
             auto_delete=self.exchange_auto_delete)
 
     def declare(self, conn):
-        # 声明队列
+        # 声明消费者就是声明一个队列, 交换机同时被声明(队列声明前)
+        # conn是oslo_messaging._drivers.impl_rabbit.Connection
         # 先生成kombu的Queue实例
         self.queue = kombu.entity.Queue(
             name=self.queue_name,
+            # Connection链接后就会设置channel
             channel=conn.channel,
             exchange=self.exchange,
             durable=self.durable,
@@ -501,9 +521,9 @@ class Consumer(object):
 
     def consume(self, tag):
         # 当前消费者订阅队列
-        # 订阅的时候把self._callback传入kombu.entity.Queue中
-        # connection调用consume的时候
-        # 这里才被调用,也就是这时候才开始订阅
+        # 这里最终调用的是basic_consume
+        # 将消费者绑定到队列上
+        # 除非重连否则listen方只执行一次
         # 参考前面Connection类的consume方法说明
         self.queue.consume(callback=self._callback,
                            consumer_tag=six.text_type(tag),

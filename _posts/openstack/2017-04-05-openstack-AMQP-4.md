@@ -98,12 +98,14 @@ class AMQPDriverBase(base.BaseDriver):
                                             purpose=purpose)
 
     def listen(self, target):
-        # PURPOSE_LISTEN参数表示要获取listen型的connection
+        # PURPOSE_LISTEN参数表示要获取listen型的ConnectionContext
         conn = self._get_connection(rpc_common.PURPOSE_LISTEN)
         # listener是AMQPListener类
         # 创建的时候把自己也作为参数传了进去
+        # 同时传入了ConnectionContext类实例
         listener = AMQPListener(self, conn)
-        # 注册一个type为topic的交换机
+        # 声明topic一个消费者
+        # 声明前会先声明一个type为topic的交换机
         # routing_key=topic=target.topic=topics.L3_AGENT="l3_agent"
         # queue_name=queue_name or topic 也就是"l3_agent"
         conn.declare_topic_consumer(exchange_name=self._get_exchange(target),
@@ -115,7 +117,8 @@ class AMQPDriverBase(base.BaseDriver):
                                     topic='%s.%s' % (target.topic,
                                                      target.server),
                                     callback=listener)
-        # 注册了一个广播型的交换机
+        # 声明广播消费者
+        # 声明前会先声明一个广播型的交换机
         # exchange_name = '%s_fanout' % topic = "l3_agent_fanout"
         # queue_name = '%s_fanout_%s' % (topic, unique) # 后缀随机的queue_name
         # routing_key = topic = "l3_agent"
@@ -148,8 +151,19 @@ class ConnectionContext:
         else:
             # agent是listen类型,走create方法,可以看前面connection_pool中对应实现
             self.connection = connection_pool.create(purpose)
+        # 无论什么类型
+        # self.connection都是oslo_messaging._drivers.impl_rabbit.Connection实例
         self.pooled = pooled
         self.connection.pooled = pooled
+
+    # 当前类没有的属性都从oslo_messaging._drivers.impl_rabbit.Connection实例
+    # 中获取,对ConnectionContext大部分方法的调用其实都是在调用
+    def __getattr__(self, key):
+        """Proxy all other calls to the Connection instance."""
+        if self.connection:
+            return getattr(self.connection, key)
+        else:
+            raise InvalidRPCConnectionReuse()
 
     def __enter__(self):
         return self
@@ -188,15 +202,6 @@ class ConnectionContext:
                 except Exception:
                     pass
             self.connection = None
-    # 其他属性都从connection里获取
-    # 对ConnectionContext大部分方法的调用其实都是在调用
-    # connection的对应方法
-    def __getattr__(self, key):
-        """Proxy all other calls to the Connection instance."""
-        if self.connection:
-            return getattr(self.connection, key)
-        else:
-            raise InvalidRPCConnectionReuse()
     .....
 ```
 
@@ -218,7 +223,8 @@ class AMQPListener(base.Listener):
         self._obsolete_reply_queues = ObsoleteReplyQueuesCache()
 
     def __call__(self, message):
-        # AMQPDriverBase在declare的时候将AMQPListener实例callback传入
+        # AMQPDriverBase在declare的时候将AMQPListener实例
+        # 作为callback传入
         # 也就是说__call__肯定是在rabbit的connection类中调用
         # 这里也就是apmq消息的入口
         # message是什么要看下一节
@@ -242,8 +248,8 @@ class AMQPListener(base.Listener):
     @base.batch_poll_helper
     # pool就是rpc server的死循环中获取incoming的函数了
     # 这里就是消息的出口
+    # 由MessageHandlingServer的_runner方法的死循环中反复调用
     def poll(self, timeout=None):
-        # 由MessageHandlingServer的_runner方法的死循环中反复调用
         while not self._stopped.is_set():
             if self.incoming:
                 # 取出并返回列表中第一个元素
@@ -253,15 +259,17 @@ class AMQPListener(base.Listener):
                 # 因为这里通过batch_poll_helper装饰器
                 # 把返回转成了只有一个值的列表
                 # 看下面batch_poll_helper
+                # 有数据就结束循环
                 return self.incoming.pop(0)
             try:
-                # 这里的consume不光是绑定消费者
+                # 这里的conn.consume不光是绑定消费者
                 # 同时也调用数据接收函数也就是kombu里的drain_events
                 # 如果消费者没有绑定过,先订阅消费者(将callback也就自身的传入)
                 # 如过消费者已经订阅过队列了
                 # 一旦有数据到来就会调用前面的__call__塞入amqp数据
-                # 前面也就能pop出数据了
-                # 这个循环实现了接受一个数据、处理一个数据、再收一个数据的循环
+                # 前面也就能pop出数据、退出循环并返回
+                # 这个循环和外层循环一起实现了接受一个数据
+                # 处理一个数据、再收一个数据的流程
                 self.conn.consume(timeout=timeout)
             except rpc_common.Timeout:
                 return None
@@ -423,7 +431,9 @@ class AMQPIncomingMessage(base.RpcIncomingMessage):
 ```
 
 message的结构现在还不明确,而message又是通过Connection传入的
+
 ```python
 oslo_messaging._drivers.impl_rabbit.Connection
 ```
+
 所以我们接下来要去看Connection类,请看[下一节](http://www.lolizeppelin.com/2017/04/07/openstack-AMQP-5/)

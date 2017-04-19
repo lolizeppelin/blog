@@ -271,8 +271,10 @@ def create(self):
 当object_type为APP时, APP的invoke为
 ```python
 def invoke(self, context):
+    # invoke反射
     if context.protocol in ('paste.composit_factory',
                             'paste.composite_factory'):
+        # fix_call看下面
         return fix_call(context.object,
                         context.loader, context.global_conf,
                         **context.local_conf)
@@ -310,6 +312,25 @@ def urlmap_factory(loader, global_conf, **local_conf):
         app = loader.get_app(app_name, global_conf=global_conf)
         urlmap[path] = app
     return urlmap
+
+# URLMap类大致代码
+class URLMap(paste.urlmap.URLMap):
+    ...
+    # urlmap类是callable的
+    def __call__(self, environ, start_response):
+        host = environ.get('HTTP_HOST', environ.get('SERVER_NAME')).lower()
+        if ':' in host:
+            host, port = host.split(':', 1)
+        else:
+            if environ['wsgi.url_scheme'] == 'http':
+                port = '80'
+            else:
+                port = '443'
+        # 从environ中获取到path信息
+        path_info = environ['PATH_INFO']
+        path_info = self.normalize_url(path_info, False)[1]
+        # path映射到openstack的具体app line
+        mime_type, app, app_url = self._path_strategy(host, port, path_info)
 ```
 
 
@@ -342,6 +363,7 @@ class Server(BaseHTTPServer.HTTPServer):
             proto.minimum_chunk_size = self.minimum_chunk_size
         proto.capitalize_response_headers = self.capitalize_response_headers
         try:
+            # 把自己传到proto中
             proto.__init__(sock, address, self)
         except socket.timeout:
             # Expected exceptions are not exceptional
@@ -378,8 +400,10 @@ class HttpProtocol(BaseHTTPServer.BaseHTTPRequestHandler):
         if not self.parse_request():
             return
         ...
+        # 前面已经从socket里读好数据并存放到当前实例的属性中
+        # 现在取出来
         self.environ = self.get_environ()
-        # 这里application是一个URLMap类
+        # server.app,也就是self.application是一个URLMap类
         # 也就是load_app所返回的所有对应openstack的app line组成的字典
         self.application = self.server.app
         try:
@@ -398,25 +422,6 @@ class HttpProtocol(BaseHTTPServer.BaseHTTPRequestHandler):
         # 这里是的application就是一个前面的URLMap类实例
         # start_response用于回发数据
         result = self.application(self.environ, start_response)
-
-# URLMap类大致代码
-
-class URLMap(paste.urlmap.URLMap):
-    ...
-    def __call__(self, environ, start_response):
-        host = environ.get('HTTP_HOST', environ.get('SERVER_NAME')).lower()
-        if ':' in host:
-            host, port = host.split(':', 1)
-        else:
-            if environ['wsgi.url_scheme'] == 'http':
-                port = '80'
-            else:
-                port = '443'
-        # 从environ中获取到path信息
-        path_info = environ['PATH_INFO']
-        path_info = self.normalize_url(path_info, False)[1]
-        # path映射到openstack的具体app line
-        mime_type, app, app_url = self._path_strategy(host, port, path_info)
 
 ```
 

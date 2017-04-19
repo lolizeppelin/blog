@@ -146,6 +146,13 @@ self.connection = kombu.connection.Connection(
     },
 )
 
+# 声明交换机(这个会在consume实例初始化的时候就声明)
+self.exchange = kombu.entity.Exchange(
+    name=exchange_name,
+    type=type,
+    durable=self.durable,
+    auto_delete=self.exchange_auto_delete)
+
 # 初始化队列
 self.queue = kombu.entity.Queue(
     name=self.queue_name,
@@ -198,7 +205,7 @@ class Connection(object):
          # 确认connection初始化
          self.connection
          if self._default_channel is None:
-             # 生成channel
+             # 在这里生成channel
              self._default_channel = self.channel()
          return self._default_channel
 
@@ -217,13 +224,20 @@ class Connection(object):
          self._debug('establishing connection...')
          # 调用transport创建connection
          # transport就是amqp里的transport
+         # 返回的conn是amqp.connection.Connection
+         # 也就是说kombu.connection.Connection.connection
+         # 是amqp.connection.Connection实例
          conn = self.transport.establish_connection()
          self._debug('connection established: %r', self)
          return conn
 
      def channel(self):
+         # 创建channel方法
+         # 1个connection可以创建很多个channel
+         # listen端一般只创建1个connection和一个channel
+         # 所以一般都调用default_channel获取default_channel
          self._debug('create channel')
-         # 调用transport创建channel
+         # 下层是调用transport创建channel
          # transport就是amqp里的transport
          chan = self.transport.create_channel(self.connection)
          if _log_channel:  # pragma: no cover
@@ -257,6 +271,8 @@ class Connection(object):
         # 这里把channel变成channels列表
         # 不用列表会出现UnboundLocalError
         # 用列表原因参考闭包自由变量重新绑定
+        # 在openstack中传入的fun是
+        # execute_method
         channels = [channel]
         class Revival(object):
             __name__ = getattr(fun, '__name__', None)
@@ -343,9 +359,12 @@ class Connection(object):
         _ensured.__name__ = bytes_if_py2('{0}(ensured)'.format(fun.__name__))
         _ensured.__doc__ = fun.__doc__
         _ensured.__module__ = fun.__module__
-        # _ensured就是autoretry_method
-        # autoretry_method()就是_ensured()
-        # 返回值是Revival.__call___的返回值
+        # 返回_ensured这个闭包
+        # 在openstack的oslo_messaging._drivers.impl_rabbit.Connection
+        # 中获取到的autoretry_method就是_ensured
+        # 调用autoretry_method()就是执行_ensured()
+        # 返回值是闭包Revival.__call___的返回值
+        # 这函数式编程真TM绕
         return _ensured
 ```
 
