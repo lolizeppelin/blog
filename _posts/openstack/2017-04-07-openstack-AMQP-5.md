@@ -551,6 +551,7 @@ class Consumer(object):
             # 也就是说AMQPListener中
             # AMQPIncomingMessage封装的message
             # 是RabbitMessage
+            # 但是这个message是什么还要看kombu的代码
             self.callback(RabbitMessage(message))
         except Exception:
             LOG.exception(_LE("Failed to process message"
