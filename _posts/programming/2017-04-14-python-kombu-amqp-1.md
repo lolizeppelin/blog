@@ -369,3 +369,5 @@ class Connection(object):
 ```
 
 下一节我们看amqp包中的Transport,socket循环和messag的封装都在其中
+
+[下一节](http://www.lolizeppelin.com/2017/04/14/python-kombu-amqp-2/)

@@ -483,3 +483,6 @@ class GenericContent(object):
 
 1. transport也就是TCPTransport中read_frame()生成返回值的过程和返回结构
 2. channel中dispatch_method的过程(如何调用外部传入的callback)
+
+[上一节](http://www.lolizeppelin.com/2017/04/14/python-kombu-amqp-1/)
+[下一节](http://www.lolizeppelin.com/2017/04/14/python-kombu-amqp-3/)

@@ -679,4 +679,4 @@ class CommonRpcContext(object):
 
 ```
 
-接下来要完全搞清楚原生message是什么,需要看kombu和py-amqp
+接下来要完全搞清楚原生message是什么,需要看[kombu和py-amqp](http://www.lolizeppelin.com/2017/04/14/python-kombu-amqp-1/)

@@ -451,3 +451,5 @@ class AbstractChannel(object):
         for listener in listeners:
             listener(*args)
 ```
+
+[上一节](http://www.lolizeppelin.com/2017/04/14/python-kombu-amqp-2/)
