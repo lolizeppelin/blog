@@ -180,12 +180,14 @@ class Channel(AbstractChannel):
         super(Channel, self).__init__(connection, channel_id)
         # 消费者的callback
         # key是consumer_tag
-        # 外部callback存放位置
+        # 外部callback存放位置,key是consumer_tag,value就是callable对象
         self.callbacks = {}
+        # 内部callback, channel关注的method_sig的回调
+        self._callbacks = {}
         ...
 
     def _setup_listeners(self):
-        # 这里可以看出Channel专用方法
+        # 这里可以看出Channel关注的method_sig
         self._callbacks.update({
             spec.Channel.Close: self._on_close,
             spec.Channel.CloseOk: self._on_close_ok,
@@ -276,6 +278,10 @@ class Channel(AbstractChannel):
        if on_cancel:
            self.cancel_callbacks[consumer_tag] = on_cancel
        if no_ack:
+           # 不需要主动回复no_ack的,添加到
+           # no_ack_consumers队列中
+           # openstack里需要确认的执行的消息都是no_ack=False的
+           # 基本不会走到这里
            self.no_ack_consumers.add(consumer_tag)
        return p
 

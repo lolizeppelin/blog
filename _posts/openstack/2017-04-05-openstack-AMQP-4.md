@@ -47,6 +47,8 @@ class RabbitDriver(amqpdriver.AMQPDriverBase):
         # 连接池对象, Connection参数是一个class
         # 在这里是oslo_messaging._drivers.impl_rabbit.Connection
         # rpc_conn_pool_size是连接池大小
+        # 传入什么Connection类
+        # 从pool中或去到的就是什么Connection类的实例
         connection_pool = pool.ConnectionPool(
             conf, conf.oslo_messaging_rabbit.rpc_conn_pool_size,
             url, Connection)
@@ -60,29 +62,6 @@ class RabbitDriver(amqpdriver.AMQPDriverBase):
 
     def require_features(self, requeue=True):
         pass
-
-# 上面的ConnectionPool类
-class ConnectionPool(Pool):
-    """Class that implements a Pool of Connections."""
-    def __init__(self, conf, rpc_conn_pool_size, url, connection_cls):
-        # connection_cls就是oslo_messaging._drivers.impl_rabbit.Connection
-        self.connection_cls = connection_cls
-        self.conf = conf
-        self.url = url
-        super(ConnectionPool, self).__init__(rpc_conn_pool_size)
-        self.reply_proxy = None
-    # agent是监听类,调用create
-    # 服务器的调用get, get在父类Pool中
-    def create(self, purpose=None):
-        if purpose is None:
-            purpose = common.PURPOSE_SEND
-        LOG.debug('Pool creating new connection')
-        # create最终通过connection_cls创建并返回实例
-        # connection_cls就是rabbit里的connection,也就是
-        # oslo_messaging._drivers.impl_rabbit.Connection
-        return self.connection_cls(self.conf, self.url, purpose)
-    # 略过其他代码
-    ....
 
 # RabbitDriver的父类
 class AMQPDriverBase(base.BaseDriver):
@@ -107,7 +86,11 @@ class AMQPDriverBase(base.BaseDriver):
         # 声明topic一个消费者
         # 声明前会先声明一个type为topic的交换机
         # routing_key=topic=target.topic=topics.L3_AGENT="l3_agent"
-        # queue_name=queue_name or topic 也就是"l3_agent"
+        # queue_name=topic 也就是"l3_agent"
+        # target.exchange外部是没有设置的
+        # 最初的get_transport创建RabbitDriver类实例的是后
+        # 传入了default_exchange
+        # 所以exchange_name是RabbitDriver类实例的default_exchange
         conn.declare_topic_consumer(exchange_name=self._get_exchange(target),
                                     topic=target.topic,
                                     callback=listener)
@@ -118,13 +101,42 @@ class AMQPDriverBase(base.BaseDriver):
                                                      target.server),
                                     callback=listener)
         # 声明广播消费者
+        # 广播声明和之前的普通消费者的声明有写些不一样
+        # 不需要设置exchange_name和queue_name
         # 声明前会先声明一个广播型的交换机
         # exchange_name = '%s_fanout' % topic = "l3_agent_fanout"
         # queue_name = '%s_fanout_%s' % (topic, unique) # 后缀随机的queue_name
         # routing_key = topic = "l3_agent"
+        # 广播队列会在rabbit_transient_queues_ttl时间后消失
+        # 这个队列对l3-agent应该是没什么用的
         conn.declare_fanout_consumer(target.topic, listener)
         # 返回的listener就是AMQPListener实例,后面我继续看AMQPListener类
         return listener
+
+
+# 上面的用到的ConnectionPool类
+class ConnectionPool(Pool):
+    """Class that implements a Pool of Connections."""
+    def __init__(self, conf, rpc_conn_pool_size, url, connection_cls):
+        # connection_cls就是oslo_messaging._drivers.impl_rabbit.Connection
+        self.connection_cls = connection_cls
+        self.conf = conf
+        self.url = url
+        super(ConnectionPool, self).__init__(rpc_conn_pool_size)
+        self.reply_proxy = None
+    # agent是监听类,调用create
+    # 服务器的调用get, get在父类Pool中
+    def create(self, purpose=None):
+        if purpose is None:
+            purpose = common.PURPOSE_SEND
+        LOG.debug('Pool creating new connection')
+        # create最终通过connection_cls创建并返回实例
+        # connection_cls就是rabbit里的connection,也就是
+        # oslo_messaging._drivers.impl_rabbit.Connection
+        return self.connection_cls(self.conf, self.url, purpose)
+    # 略过其他代码
+    ....
+
 
 class ConnectionContext:
     # ConnectionContext其实有继承Connection类

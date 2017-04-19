@@ -112,14 +112,15 @@ class Connection(object):
         for server in self.servers:
             server.wait()
 
-# 我们来看看生成rpc server的Target类
+# 我们来看看生成rpc server的必要参数
+# oslo_messaging.target.Target
 class Target(object):
     def __init__(self, exchange=None, topic=None, namespace=None,
                  version=None, server=None, fanout=None,
                  legacy_namespaces=None):
         # 从属性可以看出Target相当于一份配置文件
         # -----------------
-        # 当Target的使用者是server(这里的server表示服务端的意思)的时候
+        # 当Target的使用者是server(这里的server表示接收方的意思)的时候
         # topic和server是必要属性
         # exchange可选属性
         # -----------------
@@ -136,7 +137,14 @@ class Target(object):
         self.version = version
         # Clients can request that a message be directed to a specific
         # server, rather than just one of a pool of servers listening on the topic.
+        # ------------原文翻译---------------------
         # 客户端从指定的server请求信息而不是从监听topic的的servers组成的池中选择
+        # ----------------------------------------
+        # server就是配置文件中default部分的host值
+        # 默认取值为当前机器的hostname
+        # 下层会声明两个消费者
+        # 一个是topic
+        # 一个是topic.server
         self.server = server
         self.fanout = fanout
         self.accepted_namespaces = [namespace] + (legacy_namespaces or [])
@@ -216,6 +224,21 @@ def init(conf):
 def get_transport(conf, url=None, allowed_remote_exmods=None, aliases=None):
     ......
     # 初始化rabbit驱动,rabbit驱动,前面省略校验代码
+
+    allowed_remote_exmods = allowed_remote_exmods or []
+    conf.register_opts(_transport_opts)
+
+    if not isinstance(url, TransportURL):
+        url = url or conf.transport_url
+        parsed = TransportURL.parse(conf, url, aliases)
+        if not parsed.transport:
+            raise InvalidTransportURL(url, 'No scheme specified in "%s"' % url)
+        url = parsed
+
+    # 交换机名在这里设置的
+    kwargs = dict(default_exchange=conf.control_exchange,
+                  allowed_remote_exmods=allowed_remote_exmods)
+
     try:
        mgr = driver.DriverManager('oslo.messaging.drivers',
                                   url.transport.split('+')[0],
@@ -227,7 +250,7 @@ def get_transport(conf, url=None, allowed_remote_exmods=None, aliases=None):
 
     return Transport(mgr.driver)
 
-AMQP
+# AMQP
 class Transport(object):
     # 代码可以看出Transport是直接封装了rabbit驱动的调用
     # 也就是信息的收发通过Transport
@@ -260,6 +283,7 @@ class Transport(object):
                                         'topic and server names specified',
                                         target)
         # 这里初始化rabbit驱动的监听
+        # 返回的是AMQPListener累实例,后面几节会分析到
         return self._driver.listen(target)
 
     # ------------------下面的函数是NOTIFIER用的-----------------------

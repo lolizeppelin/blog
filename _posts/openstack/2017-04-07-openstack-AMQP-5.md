@@ -340,6 +340,7 @@ class Connection(object):
             if tag is None:
                 tag = next(self._tags)
                 self._active_tags[consumer.queue_name] = tag
+                # 添到_new_tags列表里
                 self._new_tags.add(tag)
             # 每声明一个consumer
             # 就会添加到self._consumers字典中
@@ -359,15 +360,18 @@ class Connection(object):
         def _consume():
             ....
             # 有新消费者
+            # self._new_tags中的消费者是
+            # declare_consumer的时候添进去的
             if self._new_tags:
                 for consumer, tag in self._consumers.items():
                     if tag in self._new_tags:
-                        # 新来的消费者调用一次consume
+                        # 新来的消费者调用一次consume,把消费者绑定到队列
                         # 这里就是把callback, 也就是注入AMQPListener实例
                         # 注入到kombu的地方
                         # 我们在后面的drain_events会从socket中获取到amqp的帧
                         # 但是kombu调用AMQPListener.__call__的部分需要到kombu中找
                         consumer.consume(tag=tag)
+                        # 将消费者的tag从_new_tags中移除
                         self._new_tags.remove(tag)
 
             poll_timeout = (self._poll_timeout if timeout is None
