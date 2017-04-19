@@ -131,9 +131,19 @@ class _AbstractTransport(object):
 
 ```python
 
+# kombu.transport.pyamqp.Channel
+# 这是我们使用的类
+class Channel(amqp.Channel, base.StdChannel):
+    # 定义Message类
+    Message = Message
+    ....
+    def message_to_python(self, raw_message):
+        # 把帧msg转化为Message类
+        return self.Message(raw_message, channel=self)
+
 # amqp.channel.Channel
 class Channel(AbstractChannel):
-    # 和amqp.connection.Connection继承自AbstractChannel
+    # 和amqp.connection.Connection一样继承自AbstractChannel
     _METHODS = {
     spec.method(spec.Channel.Close, 'BsBB'),
     spec.method(spec.Channel.CloseOk),
@@ -272,9 +282,10 @@ class Channel(AbstractChannel):
 
    def _on_basic_deliver(self, consumer_tag, delivery_tag, redelivered,
                          exchange, routing_key, msg):
-       # 这个回调就是有数据发活来后激活callback的
+       # 这个回调函数被dispatch_method调用
        # 当收到spec.Basic.Deliver包的时候channel
        # 的内部回调就是当前方法_on_basic_deliver
+       # 这个方法内部就是调用外部回调的
        msg.channel = self
        msg.delivery_info = {
            'consumer_tag': consumer_tag,
@@ -290,6 +301,7 @@ class Channel(AbstractChannel):
            fun = self.callbacks[consumer_tag]
        except KeyError:
            # 找不到consumer_tag对应的callback
+           # 调用basic_reject拒绝包
            AMQP_LOGGER.warn(
                REJECTED_MESSAGE_WITHOUT_CALLBACK,
                delivery_tag, consumer_tag, exchange, routing_key,
@@ -297,6 +309,8 @@ class Channel(AbstractChannel):
            self.basic_reject(delivery_tag, requeue=True)
        else:
            # 这里调用了callback
+           # msg是dispatch_method调用_on_basic_deliver的最后一个参数
+           # 那个参数也就是openstack里我们要了解的message
            fun(msg)
 
 
@@ -372,6 +386,7 @@ class AbstractChannel(object):
                     pending.pop(m, None)
 
     # 这个方法也是在父类AbstractChannel中
+    # 用于分发接收到的帧
     def dispatch_method(self, method_sig, payload, content):
         # connection最后是调用channel的dispatch_method来分发数据
         if content and \
@@ -419,7 +434,14 @@ class AbstractChannel(object):
         # amqp_method的content为True
         # 插入函数入口传入的content
         if amqp_method.content:
+            # 最后一个参数是content
+            # 回头看dispatch_method
+            # 是frame_handler传入的最后一个参数
+            # 类型就是amqp.basic_message.Message!
+            # 通过message_to_python函数封装为
+            # kombu.transport.pyamqp.Message
             args.append(content)
         # 顺序调用回调
         for listener in listeners:
             listener(*args)
+```

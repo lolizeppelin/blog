@@ -66,6 +66,12 @@ tag: ["python", "linux"]
          # 两个类型的connection间循环引用
          return conn
 
+# 我们用的类
+# kombu.transport.pyamqp.Connection
+ class Connection(amqp.Connection):
+     # 这里就重写了Channel类
+     Channel = Channel
+
 # amqp.connection.Connection
 class Connection(AbstractChannel):
     Channel = Channel
