@@ -168,9 +168,14 @@ class Channel(AbstractChannel):
         AMQP_LOGGER.debug('using channel_id: %s', channel_id)
         # 父类中将调用_setup_listeners注册回调函数
         super(Channel, self).__init__(connection, channel_id)
+        # 消费者的callback
+        # key是consumer_tag
+        # 外部callback存放位置
+        self.callbacks = {}
+        ...
 
     def _setup_listeners(self):
-        # 这里可以看出
+        # 这里可以看出Channel专用方法
         self._callbacks.update({
             spec.Channel.Close: self._on_close,
             spec.Channel.CloseOk: self._on_close_ok,
@@ -178,6 +183,9 @@ class Channel(AbstractChannel):
             spec.Channel.OpenOk: self._on_open_ok,
             spec.Basic.Cancel: self._on_basic_cancel,
             spec.Basic.CancelOk: self._on_basic_cancel_ok,
+            # 这个回调就是调用外部callback的函数
+            # 收到method_sig为spec.Basic.Deliver的时候
+            # 调用_on_basic_deliver
             spec.Basic.Deliver: self._on_basic_deliver,
             spec.Basic.Return: self._on_basic_return,
             spec.Basic.Ack: self._on_basic_ack,
@@ -193,55 +201,6 @@ class Channel(AbstractChannel):
             spec.Channel.Open, 's', ('',), wait=spec.Channel.OpenOk,
         )
 
-    def dispatch_method(self, method_sig, payload, content):
-        # connection最后是调用channel的dispatch_method来分发数据
-        if content and \
-                self.auto_decode and \
-                hasattr(content, 'content_encoding'):
-            try:
-                content.body = content.body.decode(content.content_encoding)
-            except Exception:
-                pass
-        try:
-            # 匹配到对应的amqp_method
-            # 返回值是类似method_t(method_sig=(20, 40), args='BsBB', content=False)
-            # 的对象
-            amqp_method = self._METHODS[method_sig]
-        except KeyError:
-            raise AMQPNotImplementedError(
-                'Unknown AMQP method {0!r}'.format(method_sig))
-        # 判断下method_sig是不是Channel专用的
-        # channel专用的的method_sig看_setup_listeners中注册的回调
-        # 一般是channel初始化用的和关闭的时候用的
-        try:
-            listeners = [self._callbacks[method_sig]]
-        except KeyError:
-            listeners = None
-        # 大部分操作都会走这里
-        try:
-            # 从_pending中弹出回调方法
-            # 关键点在于_pending里有什么
-            one_shot = self._pending.pop(method_sig)
-        except KeyError:
-            # _pending找不到,也不是channel默认方法
-            if not listeners:
-                return
-        else:
-            if listeners is None:
-                listeners = [one_shot]
-            else:
-                listeners.append(one_shot)
-        args = []
-        # amqp_method.args是反序列化用的格式化字符串
-        if amqp_method.args:
-            args, _ = loads(amqp_method.args, payload, 4)
-        # amqp_method的content为True
-        # 插入函数入口传入的content
-        if amqp_method.content:
-            args.append(content)
-        # 顺序调用回调
-        for listener in listeners:
-            listener(*args)
     # -----------------------------------------------------#
     # 绑定消费者的过程依次调用下面的函数
     # 1 exchange_declare 声明交换机
@@ -291,31 +250,76 @@ class Channel(AbstractChannel):
                      callback=None, arguments=None, on_cancel=None,
                      argsig='BssbbbbF'):
        # 声明消费者
+       # 外部的callback就是这里传入的
+       # 在openstack里, 这里的callback就是Consumer._callback
+       # 也就是AMQPListener.__call__的调用位置
        p = self.send_method(
            spec.Basic.Consume, argsig,
            (0, queue, consumer_tag, no_local, no_ack, exclusive,
             nowait, arguments),
            wait=None if nowait else spec.Basic.ConsumeOk,
        )
-
        if not nowait and not consumer_tag:
            consumer_tag = p
-
+       # 这里外部callback注册到self.callbacks字典中
        self.callbacks[consumer_tag] = callback
-
        if on_cancel:
            self.cancel_callbacks[consumer_tag] = on_cancel
        if no_ack:
            self.no_ack_consumers.add(consumer_tag)
        return p
+
+
+   def _on_basic_deliver(self, consumer_tag, delivery_tag, redelivered,
+                         exchange, routing_key, msg):
+       # 这个回调就是有数据发活来后激活callback的
+       # 当收到spec.Basic.Deliver包的时候channel
+       # 的内部回调就是当前方法_on_basic_deliver
+       msg.channel = self
+       msg.delivery_info = {
+           'consumer_tag': consumer_tag,
+           'delivery_tag': delivery_tag,
+           'redelivered': redelivered,
+           'exchange': exchange,
+           'routing_key': routing_key,
+       }
+       # 这里就是调用外部callback的地方
+       # 在openstack中,这里的fun就是Consumer._callback
+       # 也就是AMQPListener.__call__调用开始的位置
+       try:
+           fun = self.callbacks[consumer_tag]
+       except KeyError:
+           # 找不到consumer_tag对应的callback
+           AMQP_LOGGER.warn(
+               REJECTED_MESSAGE_WITHOUT_CALLBACK,
+               delivery_tag, consumer_tag, exchange, routing_key,
+           )
+           self.basic_reject(delivery_tag, requeue=True)
+       else:
+           # 这里调用了callback
+           fun(msg)
+
+
+class AbstractChannel(object):
+    # Channel的几个重要方法在父类中
+    # 我们顺便一起看了
+    def __init__(self, connection, channel_id):
+       self.connection = connection
+       self.channel_id = channel_id
+       connection.channels[channel_id] = self
+       self.method_queue = []  # Higher level queue for methods
+       self.auto_decode = False
+       self._pending = {}
+       self._callbacks = {}
+       self._setup_listeners()
     # -----------------------------------------------------#
     # 我们来看看send_method
-    # 这部分是父类方法
+    # 这个方法也是在父类AbstractChannel中
     # 所以amqp.connection.Connection的send_method也是这个
     def send_method(self, sig,
                     format=None, args=None, content=None,
                     wait=None, callback=None, returns_tuple=False):
-        # 这玩意是vine模块的
+        # 这玩意是vine模块的先不用管
         p = promise()
         # amqp.channel.Channel的connection是amqp.connection.Connection
         # amqp.connection.Connection的connection自身(self)
@@ -340,6 +344,7 @@ class Channel(AbstractChannel):
             return self.wait(wait, returns_tuple=returns_tuple)
         return p
 
+    # 这个方法也是在父类AbstractChannel中
     def wait(self, method, callback=None, timeout=None, returns_tuple=False):
         p = ensure_promise(callback)
         pending = self._pending
@@ -355,7 +360,7 @@ class Channel(AbstractChannel):
         try:
             while not p.ready:
                 self.connection.drain_events(timeout=timeout)
-
+            # 都和vine有关...不太看得懂
             if p.value:
                 args, kwargs = p.value
                 return args if returns_tuple else (args and args[0])
@@ -365,3 +370,56 @@ class Channel(AbstractChannel):
                     pending[m] = prev_p[i]
                 else:
                     pending.pop(m, None)
+
+    # 这个方法也是在父类AbstractChannel中
+    def dispatch_method(self, method_sig, payload, content):
+        # connection最后是调用channel的dispatch_method来分发数据
+        if content and \
+                self.auto_decode and \
+                hasattr(content, 'content_encoding'):
+            try:
+                content.body = content.body.decode(content.content_encoding)
+            except Exception:
+                pass
+        try:
+            # 匹配到对应的amqp_method
+            # 返回值是类似method_t(method_sig=(20, 40), args='BsBB', content=False)
+            # 的对象
+            amqp_method = self._METHODS[method_sig]
+        except KeyError:
+            raise AMQPNotImplementedError(
+                'Unknown AMQP method {0!r}'.format(method_sig))
+        # self._callbacks存放Channel关注的method_sig
+        # 所有关注的method_sig看_setup_listeners中注册的回调部分
+        # 例如spec.Basic.Deliver的回调是self._on_basic_deliver
+        # _on_basic_deliver中会调用外部回调
+        # 见上面_on_basic_deliver函数
+        try:
+            listeners = [self._callbacks[method_sig]]
+        except KeyError:
+            listeners = None
+        try:
+            # 从_pending中弹出回调方法
+            # 关键点在于_pending里有什么
+            # 都和vine有关
+            one_shot = self._pending.pop(method_sig)
+        except KeyError:
+            # _pending找不到,也不是channel默认关注的method_sig
+            if not listeners:
+                return
+        else:
+            if listeners is None:
+                listeners = [one_shot]
+            else:
+                listeners.append(one_shot)
+        args = []
+        # amqp_method.args是反序列化用的格式化字符串
+        if amqp_method.args:
+            args, _ = loads(amqp_method.args, payload, 4)
+        # amqp_method的content为True
+        # 插入函数入口传入的content
+        if amqp_method.content:
+            args.append(content)
+        # 顺序调用回调
+        for listener in listeners:
+            listener(*args)
