@@ -205,15 +205,15 @@ eventlet.hubs.get_hub()
 经过测试...果然解决了排序错误导致执行顺序错误的问题..看上去问题解决了以后,顺手测试了下效率,结果
 
     所有测试都是分别执行30000000次monotonic()和time.time(),结果如下
-    windows 10   python 2.7
+    windows10   python 2.7      surface pro3 i7-4650U
     15.6640000343
     4.8180000782
 
-    centos7 python 2.7
+    centos6     python 2.6      HP DL380 G6 X5650   
     150.870907068
     14.4426150322
 
-    centos 6 python 2.6
+    centos7     python 2.7      HP DL360 G6 X5650
     92.3898830414
     6.76288104057
 
