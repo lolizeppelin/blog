@@ -118,7 +118,7 @@ class RPCDispatcher(dispatcher.DispatcherBase):
             incoming.reply(self._dispatch(incoming.ctxt,
                                           incoming.message))
         # 后面是捕获Exception后的处理
-        # 可以看到捕获Exception后也会通过incoming.reply回复
+        # 可以看到捕获期待的错误后也会通过incoming.reply回复
         except ExpectedException as e:
             LOG.debug(u'Expected exception during message handling (%s)',
                       e.exc_info[1])

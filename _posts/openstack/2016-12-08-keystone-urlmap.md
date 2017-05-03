@@ -358,12 +358,17 @@ class Server(BaseHTTPServer.HTTPServer):
 
     def process_request(self, sock_params):
         sock, address = sock_params
+        # self.protocol 就是HttpProtocol
+        # 这里用了点技巧
+        # 先用用HttpProtocol.__new__生成类实例
+        # 修改部分属性后再调用init
         proto = new(self.protocol)
         if self.minimum_chunk_size is not None:
             proto.minimum_chunk_size = self.minimum_chunk_size
         proto.capitalize_response_headers = self.capitalize_response_headers
         try:
             # 把自己传到proto中
+            # BaseHTTPRequestHandler的第一个个参数request就是sock
             proto.__init__(sock, address, self)
         except socket.timeout:
             # Expected exceptions are not exceptional
@@ -387,9 +392,37 @@ class HttpProtocol(BaseHTTPServer.BaseHTTPRequestHandler):
         finally:
             self.finish()
 
+    def setup(self):
+        # self.request就是socket对象
+        # 一般来说是eventlet替换过的绿色socket对象
+        conn = self.connection = self.request
+        if getattr(socket, 'TCP_QUICKACK', None):
+            try:
+                conn.setsockopt(socket.IPPROTO_TCP, socket.TCP_QUICKACK, True)
+            except socket.error:
+                pass
+
+        try:
+            # 如果socket对象支持生成文件
+            self.rfile = conn.makefile('rb', self.rbufsize)
+            self.wfile = conn.makefile('wb', self.wbufsize)
+        except (AttributeError, NotImplementedError):
+            if hasattr(conn, 'send') and hasattr(conn, 'recv'):
+                # it's an SSL.Connection
+                # ssl socket对象没有makefile功能
+                # 调用soket原生的_fileobject方法
+                self.rfile = socket._fileobject(conn, "rb", self.rbufsize)
+                self.wfile = socket._fileobject(conn, "wb", self.wbufsize)
+            else:
+                # conn对象错误
+                raise NotImplementedError("wsgi.py doesn't support sockets "
+                                          "of type %s" % type(conn))
+
+
     def handle(self):
         self.close_connection = 1
         self.handle_one_request()
+        # 循环接收数据
         while not self.close_connection:
             self.handle_one_request()
 
@@ -398,6 +431,7 @@ class HttpProtocol(BaseHTTPServer.BaseHTTPRequestHandler):
         self.raw_requestline = self.rfile.readline(self.server.url_length_limit)
         # 这里是读出socket里的内容,生成environ
         if not self.parse_request():
+            # 数据包不完整直接返回
             return
         ...
         # 前面已经从socket里读好数据并存放到当前实例的属性中

@@ -133,3 +133,40 @@ intance = singleton.singleton
 因为python中的module就是最好的单例模式
 
 #### 写在最末尾,了解单例模式可以更好的理解pthon中一切皆对象,module里的class、function其实都是对象,而且都是单例的
+
+
+最近发现openstack里一个厉害的单例写法,通过元类达成
+
+```python
+# 继承type实现单例
+class Singleton(type):
+    _instances = {}
+    _semaphores = lockutils.Semaphores()
+
+    def __call__(cls, *args, **kwargs):
+        # lock可以用thread的lock做
+        with lockutils.lock('singleton_lock', semaphores=cls._semaphores):
+            if cls not in cls._instances:
+                cls._instances[cls] = super(Singleton, cls).__call__(
+                    *args, **kwargs)
+        return cls._instances[cls]
+
+# 添加metaclass的闭包
+def add_metaclass(metaclass):
+    """Class decorator for creating a class with a metaclass."""
+    def wrapper(cls):
+        orig_vars = cls.__dict__.copy()
+        orig_vars.pop('__dict__', None)
+        orig_vars.pop('__weakref__', None)
+        for slots_var in orig_vars.get('__slots__', ()):
+            orig_vars.pop(slots_var)
+        return metaclass(cls.__name__, cls.__bases__, orig_vars)
+    return wrapper
+
+@add_metaclass(Singleton)
+class YourClass(object):
+    """docstring for ."""
+    def __init__(self, arg):
+        super(, self).__init__()
+        self.arg = arg
+```

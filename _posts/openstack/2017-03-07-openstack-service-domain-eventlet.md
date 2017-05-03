@@ -149,7 +149,7 @@ class ProcessLauncher(object):
         try:
             # 子进程的工作循环在这里
             # 这个launcher不是ProcessLauncher
-            # 看下面launcher的wait部分
+            # 看下面Launcher的wait部分
             launcher.wait()
         except SignalExit as exc:
             signame = self.signal_handler.signals_to_name[exc.signo]
@@ -248,6 +248,7 @@ class Launcher(object):
 
     def wait(self):
         # 看下下面service的wait
+        # 阻塞再次
         self.services.wait()
 
     def restart(self):
@@ -274,19 +275,29 @@ class Services(object):
         self.services.append(service)
         # run_service最终会调用service的start方法
         # service就是外部传入的基于ServiceBase类的外部实例
+        # 传入self.done的目的在于
+        # 任意一个service都可以给self.done发信息通知真个进程退出
         self.tg.add_thread(self.run_service, service, self.done)
 
     def stop(self):
         """Wait for graceful shutdown of services and kill the threads."""
+        # 收到信号后会调用stop函数
+        # python的主线程才能收到信号
         for service in self.services:
+            # 这里的调用必须能让的serverc.wait里死循环结束
             service.stop()
-
         # Each service has performed cleanup, now signal that the run_service
         # wrapper threads can now die:
+        # 这里就是通知程序退出的地方
+        # 需要调用stop才能让run_service线程结束
+        # 也就是说调用stop才能让守护进程退出
         if not self.done.ready():
             self.done.send()
 
-        # reap threads:
+        # reap threads
+        # 这里其实相当于重复调用tg.wait()
+        # 当这里处理完tg里的线程后
+        # wait里的tg.wait()也会退出
         self.tg.stop()
 
     def wait(self):
@@ -294,10 +305,14 @@ class Services(object):
         # 这个wait先调用外部service的wait
         # service的wait一般是调用所有定时器的wait函数
         # service常用的定时器 1是定期汇报(相当于心跳)  2 是定时任务
+        # 如果外部service的wait没有死循环会直接走到下面
+        # 这里是为了等待service里的循环正常退出
         for service in self.services:
             service.wait()
-        # 最终会调用ThreadGroup的wait
+        # 这里最终会调用ThreadGroup的wait
         # 看下面ThreadGroup的wait
+        # Launcher调用的的wait的阻塞就是这里
+        # 当然service的wati里有死循环就阻塞在前面
         self.tg.wait()
 
     def restart(self):
@@ -314,13 +329,15 @@ class Services(object):
 
     @staticmethod
     def run_service(service, done):
-        # 这里调用了service的start方法并wait
+        # 这里调用了service的start方法
         try:
             service.start()
         except Exception:
             LOG.exception(_LE('Error starting thread.'))
             raise SystemExit(1)
         else:
+            # run_service就是tg里的绿色线程
+            # 具体的阻塞位置就是这里
             done.wait()
 
 # 我们再来看ThreadGroup是什么

@@ -192,7 +192,7 @@ class ConnectionContext:
                 # Reset the connection so it's ready for the next caller
                 # to grab from the pool
                 try:
-                    # 重置链接,这里应该是标记链接可以被复用了
+                    # 重置链接,这里应该是标记链接可以被使用了
                     self.connection.reset()
                 except Exception:
                     LOG.exception(_LE("Fail to reset the connection, drop it"))
@@ -200,7 +200,10 @@ class ConnectionContext:
                         self.connection.close()
                     except Exception:
                         pass
+                    # 前面reset报错后断开并重新生成连接
                     self.connection = self.connection_pool.create()
+                # send的型的会将连接放入连接池中
+                # 下次connection_pool.get的时候就不会创建新脸姐了
                 finally:
                     self.connection_pool.put(self.connection)
             # 监听型
@@ -210,6 +213,9 @@ class ConnectionContext:
                     # 这里只是调用了connection的close()方法
                     # 而connection.close()并不关闭链接
                     # 具体看下一节
+                    # 顺便这里可以看出监听型的不会放到连接池
+                    # 监听型的走到这里表示要关闭监听了
+                    # 基本就是程序要退出了
                     self.connection.close()
                 except Exception:
                     pass

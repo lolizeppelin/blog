@@ -80,6 +80,7 @@ class Service(service.Service):
         self.conn.consume_in_threads()
 
 # 这个就是create_connection()函数返回的Connection对象的类
+# neutron.common.rpc.Connection
 class Connection(object):
     def __init__(self):
         super(Connection, self).__init__()
