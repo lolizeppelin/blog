@@ -1,7 +1,7 @@
 ---
 layout: post
 title:  "python 位运算Bitwise operation"
-date:   2017-05-162 12:50:00 +0800
+date:   2017-05-16 12:50:00 +0800
 categories: "编程"
 tag: ["python", "linux"]
 ---
