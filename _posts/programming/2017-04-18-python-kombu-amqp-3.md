@@ -444,7 +444,8 @@ class AbstractChannel(object):
             # 回头看dispatch_method
             # 是frame_handler传入的最后一个参数
             # 类型就是amqp.basic_message.Message!
-            # 通过message_to_python函数封装为
+            # openstack里会通过message_to_python
+            # 将这个message封装为函数封装为
             # kombu.transport.pyamqp.Message
             args.append(content)
         # 顺序调用回调
