@@ -233,7 +233,10 @@ esac
 1.   创建bond接口，在接口配置文件的路径下/etc/sysconfig/network-scripts/
 #vi /etc/sysconfig/network-scripts/ifcfg-bond0
 DEVICE="bond0"
-BOOTPROTO=none
+NAME="bond0"
+#TYPE=BOND
+#BONDING_MASTER=yes
+BOOTPROTO=static
 IPADDR=172.16.0.1
 NETMASK=255.255.255.0
 GATEWAY=172.16.0.253
@@ -326,10 +329,10 @@ ONBOOT=yes
 USERCTL=no
 ```
 
-补充一下, 现在的交换机一般都不再支持旧式的手工端口聚合,都是直接lacp,简单情况下我们直接在交换机上配置静态lacp,然后在服务器上配置
+补充一下, 一般情况下我们直接在交换机上配置静态lacp,然后在服务器上配置
 
 ```text
 BONDING_OPTS="mode=4"
 ```
 
-H3C默认的情况下是静态lacp
+如果用静态端口聚合要配置mode=0,这个模式并不是很好,会因为包序列混乱导致丢包重传
