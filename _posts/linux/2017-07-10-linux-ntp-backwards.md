@@ -1,7 +1,7 @@
 ---
 layout: post
 title:  "Linux ntp避免时间回滚"
-date:   2017-01-16 15:05:00 +0800
+date:   2017-07-10 15:05:00 +0800
 categories: "网络基础"
 tag: ["linux"]
 ---
