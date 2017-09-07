@@ -42,22 +42,18 @@ taskflow是openstack未确保冗长的系列操作能正确执行的工作流框
    工作流就是用状态机来实现流程控制和执行任务的
 
 
- 上面两条光看懂了还不行,还要写过一轮深入了解,taskflow使用了openstack的通用状态机项目,所以要能看taskflow先要熟悉openstack的状态机项目Automaton
-
-https://pypi.python.org/pypi/automaton/
-
-为了熟悉状态机项目,我用状态机写了一个[tailfile](https://github.com/lolizeppelin/tailfile)项目,作用就是实现tail -f的效果,倒读N行和判断文件是否变化都用到了状态机,
-
-因为状态和事件都比较少,用状态机些这些功能有点杀鸡用牛刀,主要是为了熟悉状态机才专门用automaton来写
+ 上面两条光看懂了还不行,还要写过一轮深入了解,taskflow使用了openstack的通用状态机项目,所以要能看taskflow先要熟悉openstack的通用状态机项目[Automaton](https://pypi.python.org/pypi/automaton/)
 
 
-熟悉玩automaton以后,可以开始来看taskflow(基于最新版本2.14)了,
+为了熟悉Automaton,我用它写了一个[tailfile](https://github.com/lolizeppelin/tailfile),作用就是实现tail -f的效果,倒读N行和判断文件是否变化都用到状态机,因为状态和事件都比较少,用Automaton写这些功能有点杀鸡用牛刀,写这个项目的主要目的是用来熟悉状态机.
+
+熟悉完Automaton以后,可以开始来看taskflow(基于最新版本2.14)了。
 
 首先,因为taskflow作为通用项目而不是openstack内部项目,所以taskflow没有使用oslo中的一些通用工具
 
-而且里面同样为了兼容写了一些复杂的接口还用了futurist实现异步,我为了和自己的其他几个项目统一起来,基于taskflow2.14生成了一个简化过的项目
+而且里面同样为了兼容写了一些复杂的接口还用了futurist实现异步,我为了和自己的其他几个项目统一起来,基于taskflow2.14生成了一个简化过的项目[simpleflow](https://github.com/lolizeppelin/simpleflow)
 
-https://github.com/lolizeppelin/simpleflow
+
 
 代码变化了几个如下部分
 

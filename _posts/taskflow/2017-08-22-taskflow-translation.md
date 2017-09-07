@@ -212,3 +212,6 @@ Retry
     that can be returned from the on_failure() method are defined in an enumeration class described here:
 
     ---
+
+
+翻译已经坑了,翻译是为了能用taskflow,但是不如直接看代码好用....所以请看[taskflow使用指南-1](http://www.lolizeppelin.com/2017/09/06/taskflow-howto/)
