@@ -16,12 +16,9 @@ tag: ["openstack", "python"]
 ## atom与task
 
 > 在atom的用户指南中,ATOM的说明是——atom是TaskFlow中最小的单元XXXXXXX
-
 >> 这句话比较唬人,实际上只有两个单位继承自atom,一个是Task，一个是Retry.状态机里的任务必须继承自Task,至于Retry我们放到后面在说这个它的作用,而task是atom的简单封装,所以我们直接先讲task
-
 > 在task初始化里,有几个参数非常重要需要侧重理解：
 >> 1:name, 这个不用解释,不管你是task还是retry,必须有一个名字,一般用于识别你这个任务的作用,比如dump-db什么之类的,如果不设置会自动用类名来生成，由于一个flow中不能添加同名的atom,所以有时候必须设置对应的name
-
 >> 2:rebind, 这是一个非常关键的参数,需要用一段代码来解释
 
 ```python
@@ -84,9 +81,7 @@ btask = MysqlDump(rebind=["b1", "b2", "b3"])
 >>> 上面的代码表示,atask能输出参数b1, b2, b3
 当然,provides中内容必须少于或者等于execute返回的内容
 我们可以通过provides和rebind来让任务之间产生关联并按顺序执行,provides和rebind的应用在taskflow的例子中有一个很好的体现,用例[参考](https://github.com/lolizeppelin/simpleflow/blob/master/doc/examples/graph_flow.py)
-
 >>>这个例子适合反复参考来理解provides和rebind,不过看这个例子之前你还需要了解一个特殊的task, 名字叫_TaskFlow_INJECTOR
-
 >>>task的参数可以是上一个任务通过provides提供的,如果有初始参数的提供,taskflow通过一个名为_TaskFlow_INJECTORD的task来provides参数,当有store(例子中run传入的store)参数的时候, _TaskFlow_INJECTOR是所有task的前置task.
 
 请看下一篇介绍flow
