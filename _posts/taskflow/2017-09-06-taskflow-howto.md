@@ -105,9 +105,9 @@ taskflow是openstack未确保冗长的系列操作能正确执行的工作流框
 
     这个没什么好说的,Executor的封装的最上层,最后执行会落实到具体的Executor上
 
-4. storage
+4. Storage
 
-    这个是存储接口,后面说到flow的时候会详细讲到,storage的初始化在Engine中,一个功能是数据存储的接口,一个功能是作为flow的外层封装
+    这个是存储接口,后面说到flow的时候会详细讲到,Storage的初始化在Engine中,一个功能是数据存储的接口,一个功能是作为flow的外层封装
 
 4. Runtime与machine
 
