@@ -37,9 +37,8 @@ atask = MysqlDump()
 
 >>>当我们需要在taskflow中执行一个任务的时候, 常规的方式是,继承task.Task
 然后重写execute方法,execute中的代码就是我们需要具体执行的任务
-当我们的execute需要接收参数的时候,参数名就是a和b。  
-
->>>现在我们来看看Task的基类atom中的_init__,
+当我们的execute需要接收参数的时候,参数名就是a和b。    
+现在我们来看看Task的基类atom中的_init__,
 它调用的atom.py最上面的_build_arg_mapping和_build_rebind_dict是非常关键的函数
 这里就不贴代码了,我直接说最终结果  
 初始化的时候,通过反射execute函数获取到execute的参数列表及参数对应的默认值
