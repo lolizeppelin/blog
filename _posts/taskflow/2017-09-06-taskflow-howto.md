@@ -51,7 +51,7 @@ taskflow是openstack未确保冗长的系列操作能正确执行的工作流框
 
 首先,因为taskflow作为通用项目而不是openstack内部项目,所以taskflow没有使用oslo中的一些通用工具
 
-而且里面同样为了兼容写了一些复杂的接口还用了futurist实现异步,我为了和自己的其他几个项目统一起来,基于taskflow2.14生成了一个简化过的项目[simpleflow](https://github.com/lolizeppelin/simpleflow)
+而且里面同样为了兼容写了一些复杂的接口还用了futurist实现异步,我为了和自己的其他几个项目统一起来并并,基于taskflow2.14生成了一个简化过的项目[simpleflow](https://github.com/lolizeppelin/simpleflow)
 
 
 
@@ -115,9 +115,9 @@ taskflow是openstack未确保冗长的系列操作能正确执行的工作流框
 
     machine就是Engine中循环的(automaton)状态机了,一个engine只运行一个状态机,初始化代码在builder.MachineBuilder,MachineBuilder又是在Runtime中调用生成machine的,我们先别管Runtime,先理解一下taskflow的状态机
 
-    taskflow状态机并不复杂,但还不熟悉taskflow的时候很容易被高懵.因为taskflow用到networkx这个图库,而状态机其实就是一个有向图,所以一开始看的时候,很容易以为taskflow的状态机会非常复杂要看懂图的相关代码才能搞明白,但实际情况是
+    taskflow状态机并不复杂,但还不熟悉taskflow的时候很容易被搞懵.因为taskflow用到networkx这个图库,而状态机其实就是一个图,所以一开始看的时候,很容易以为taskflow的状态机会非常复杂要看懂图的相关代码才能搞明白,但实际情况是
 
-    taskflow的状态机和图无关!因为taskflow状态机的状态很少不需要用图来解决状态循环
+    taskflow的状态机和图无关!因为taskflow状态机的状态很少不需要用图来解决
 
     那么taskflow为什么要用到图库呢,在解决这个疑问前我们先抛开taskflow,自己用状态机设计一个解决前面——"停服 备份数据库 升级数据库  升级应用 启动服务器" 的工作流
 
