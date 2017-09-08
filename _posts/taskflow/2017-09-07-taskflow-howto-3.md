@@ -133,7 +133,7 @@ flow中的所有task/retry(包括下层flow中的task/retry)会被转换为middl
 >当需要查找atom的时候,Storage会通过middleware.FlowDetail实例查找到对应的middleware.TaskDetail/RetryDetail实例  
 有写入操作的情况下会把middleware.TaskDetail/RetryDetail实例转化为models.TaskDetail/RetryDetail通过rom写入数据库并更新middleware.TaskDetail/RetryDetail实例
 
-
+>找到对应的middleware.TaskDetail/RetryDetail实例后,通过_browse_atoms_for_execute转为Task和Retry,这里面也比较复杂涉及到execution_graph的生成
 
 ---
 
