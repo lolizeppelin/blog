@@ -143,4 +143,4 @@ taskflow是openstack未确保冗长的系列操作能正确执行的工作流框
 
     回头来看Runtime,MachineBuilder是由Runtime生成的,状态机的有些callback最终执行的Runtime中的函数,里面会有一些嵌套和封装, Scheduler的封装就在Runtime中,Runtime可以简单理解为状态机调用其它诸如Scheduler,storage等接口的中间件,Runtime在整体理解taskflow的的时候可以不用细看
 
-第一篇完...请看下一篇介绍flow  atom task retry
+第一篇完...请看下一篇介绍atom与task

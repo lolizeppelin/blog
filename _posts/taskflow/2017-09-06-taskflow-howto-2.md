@@ -74,7 +74,7 @@ btask = MysqlDump(rebind=["b1", "b2", "b3"])
 >>> 上面的代码表示,atask能输出参数b1, b2, b3  
 当然,provides中内容必须少于或者等于execute返回的内容
 我们可以通过provides和rebind来让任务之间产生关联并按顺序执行,provides和rebind的应用在taskflow的例子中有一个很好的体现,用例[参考](https://github.com/lolizeppelin/simpleflow/blob/master/doc/examples/graph_flow.py)  
-这个例子适合反复参考来理解provides和rebind,不过看这个例子之前你还需要了解一个特殊的task, 名字叫_TaskFlow_INJECTOR  
+这个例子适合反复参考来理解provides和rebind,不过看这个例子之前你还需要了解flow以及一个特殊的task, 名字叫_TaskFlow_INJECTOR  
 task的参数可以是上一个任务通过provides提供的,如果有初始参数的提供,taskflow通过一个名为_TaskFlow_INJECTORD的task来provides参数,当有store(例子中run传入的store)参数的时候, _TaskFlow_INJECTOR是所有task的前置task.
 
-请看下一篇介绍flow
+请看下一篇介绍flow和storage
