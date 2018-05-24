@@ -16,7 +16,9 @@ tag: ["python", "linux"]
 
     是eventlet计时（epoll监控的fd一直没返回）到点后抛出的
 
-    即使底层用了tcp keeplive保证了tcp,但是wsgi服务器上处理当前socket的绿色线程已经socket timout了
+    如果python版本为2.6触发一个bug导致socket不能关闭
+
+    所以即使底层用了tcp keeplive保证了tcp,但是wsgi服务器上处理当前socket的绿色线程已经因为socket timout消失了
 
     当后续包发到服务器后,由于处理当前socket数据的线程已经没了,自然就没有数据响应
 
@@ -24,11 +26,19 @@ tag: ["python", "linux"]
 
     客户端会因为超时而关闭当前长连接
 
-    要想长连接不断,则需要在wsgi服务器socket timeout的时间内发一个完整的http请求（类似自写心跳包）
 
-    如果请求不密集,写http心跳包有点脱裤子放屁, 如果请求密集,自然不需要http心跳包
+### 核心重点1：eventlet中的socket timeout是HUB抛出的！！！
 
-
-### 核心重点就是eventlet中的socket timeout是HUB抛出的！！！
+### 核心重点2：python 2.6的BaseRequestHandler的写法会出发bug不能关闭socket
 
 ### 客户端必须实现心跳,底层keepalive完全无效,因为eventlet不知道
+
+修复方法很简单, 继承BaseHTTPRequestHandler类用python2.7的init方法替换就是
+
+bug产生的原因如下
+
+    eventlet的HttpProtocol(继承自python的BaseHTTPRequestHandler)在接收数据的时候为了方便
+    通过dup把socket复制成了file对象
+    由于python2.6的BaseRequestHandler没有在finally中调用finish
+    导致异常发生的时候没有关闭掉dup出来的fd
+    所以调用了socket.close并不能关闭socket
