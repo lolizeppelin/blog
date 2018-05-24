@@ -31,8 +31,6 @@ tag: ["python", "linux"]
 
 ### 核心重点2：python 2.6的BaseRequestHandler的写法会出发bug不能关闭socket
 
-### 客户端必须实现心跳,底层keepalive完全无效,因为eventlet不知道
-
 修复方法很简单, 继承BaseHTTPRequestHandler类用python2.7的init方法替换就是
 
 bug产生的原因如下
